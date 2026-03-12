@@ -1,0 +1,104 @@
+cmake_minimum_required(VERSION 3.22)
+
+project(DspEducationStand VERSION 0.1.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+set(JUCE_DIR "C:/Users/User/JUCE" CACHE PATH "Path to the local JUCE checkout")
+option(DSP_EDU_BUILD_TESTS "Build minimal core logic tests" OFF)
+
+if (NOT EXISTS "${JUCE_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "JUCE_DIR must point to a JUCE checkout. Current value: ${JUCE_DIR}")
+endif()
+
+add_subdirectory("${JUCE_DIR}" JUCE)
+
+juce_add_gui_app(DspEducationStand
+    COMPANY_NAME "OpenAI"
+    PRODUCT_NAME "DSP Education Stand")
+
+juce_generate_juce_header(DspEducationStand)
+
+target_sources(DspEducationStand
+    PRIVATE
+        src/main.cpp
+        src/app/DspEducationStandApplication.cpp
+        src/app/MainWindow.cpp
+        src/app/MainComponent.cpp
+        src/audio/AudioEngine.cpp
+        src/audio/SignalSources.cpp
+        src/audio/WavFileSource.cpp
+        src/dsp/BuiltinProcessors.cpp
+        src/presets/PresetManager.cpp
+        src/ui/OscilloscopeBuffer.cpp
+        src/ui/OscilloscopeComponent.cpp
+        src/userdsp/UserCodeDocumentManager.cpp
+        src/userdsp/UserDspCompiler.cpp
+        src/userdsp/UserDspHost.cpp)
+
+target_include_directories(DspEducationStand
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/user_dsp_sdk")
+
+target_compile_definitions(DspEducationStand
+    PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:DspEducationStand,JUCE_PRODUCT_NAME>"
+        JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:DspEducationStand,JUCE_VERSION>")
+
+target_link_libraries(DspEducationStand
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_gui_extra
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags)
+
+if (MSVC)
+    target_compile_options(DspEducationStand PRIVATE /utf-8)
+endif()
+
+if (DSP_EDU_BUILD_TESTS)
+    juce_add_console_app(DspEducationStandTests
+        PRODUCT_NAME "DspEducationStandTests")
+
+    juce_generate_juce_header(DspEducationStandTests)
+
+    target_sources(DspEducationStandTests
+        PRIVATE
+            tests/TestMain.cpp
+            src/dsp/BuiltinProcessors.cpp
+            src/presets/PresetManager.cpp)
+
+    target_include_directories(DspEducationStandTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/user_dsp_sdk")
+
+    target_compile_definitions(DspEducationStandTests
+        PRIVATE
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0)
+
+    target_link_libraries(DspEducationStandTests
+        PRIVATE
+            juce::juce_audio_basics
+            juce::juce_core
+            juce::juce_data_structures
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    if (MSVC)
+        target_compile_options(DspEducationStandTests PRIVATE /utf-8)
+    endif()
+endif()
