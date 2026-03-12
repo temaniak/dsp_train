@@ -130,9 +130,9 @@ void AudioEngine::setWavPositionNormalized(double newPosition) noexcept
     wavFileSource.setPositionNormalized(newPosition);
 }
 
-void AudioEngine::setUserParameter(int index, float value) noexcept
+void AudioEngine::setUserControlValue(int index, float value) noexcept
 {
-    userDspHost.setParameterValue(index, value);
+    userDspHost.setControlValue(index, value);
 }
 
 OscilloscopeBuffer& AudioEngine::getOscilloscopeBuffer() noexcept

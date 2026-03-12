@@ -1,20 +1,20 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
 set "VSLANG=1033"
 
 if "%~4"=="" (
-    echo Usage: build_user_dsp.cmd ^<source.cpp^> ^<sdk_dir^> ^<output.dll^> ^<output.pdb^>
+    echo Usage: build_user_dsp.cmd ^<project_dir^> ^<sdk_dir^> ^<output.module^> ^<debug_symbols_path^>
     exit /b 1
 )
 
-set "SOURCE_FILE=%~1"
+set "PROJECT_DIR=%~1"
 set "SDK_DIR=%~2"
-set "OUTPUT_DLL=%~3"
-set "OUTPUT_PDB=%~4"
+set "OUTPUT_MODULE=%~3"
+set "OUTPUT_DEBUG_SYMBOLS=%~4"
 
-if not exist "%SOURCE_FILE%" (
-    echo Source file not found: "%SOURCE_FILE%"
+if not exist "%PROJECT_DIR%" (
+    echo Project directory not found: "%PROJECT_DIR%"
     exit /b 1
 )
 
@@ -39,12 +39,12 @@ if not defined VSDEVCMD (
     exit /b 1
 )
 
-for %%I in ("%OUTPUT_DLL%") do set "OUTPUT_DIR=%%~dpI"
-for %%I in ("%OUTPUT_PDB%") do set "PDB_DIR=%%~dpI"
+for %%I in ("%OUTPUT_MODULE%") do set "OUTPUT_DIR=%%~dpI"
+for %%I in ("%OUTPUT_DEBUG_SYMBOLS%") do set "PDB_DIR=%%~dpI"
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 if not exist "%PDB_DIR%" mkdir "%PDB_DIR%"
 
-for %%I in ("%OUTPUT_DLL%") do set "BUILD_STEM=%%~nI"
+for %%I in ("%OUTPUT_MODULE%") do set "BUILD_STEM=%%~nI"
 set "OBJ_DIR=%OUTPUT_DIR%obj_%BUILD_STEM%"
 if not exist "%OBJ_DIR%" mkdir "%OBJ_DIR%"
 
@@ -54,7 +54,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo Compiling "%SOURCE_FILE%"
+set "SOURCE_FILES="
+for /r "%PROJECT_DIR%" %%F in (*.cpp) do (
+    set "SOURCE_FILES=!SOURCE_FILES! "%%~fF""
+)
+
+if not defined SOURCE_FILES (
+    echo No .cpp source files were found in "%PROJECT_DIR%"
+    exit /b 1
+)
+
+set "PROJECT_INCLUDE=%PROJECT_DIR%\include"
+
+echo Compiling project "%PROJECT_DIR%"
 cl ^
     /nologo ^
     /std:c++20 ^
@@ -65,15 +77,17 @@ cl ^
     /Zi ^
     /Od ^
     /I"%SDK_DIR%" ^
+    /I"%PROJECT_DIR%" ^
+    /I"%PROJECT_INCLUDE%" ^
     /Fo"%OBJ_DIR%\\" ^
     /Fd"%OBJ_DIR%\vc143.pdb" ^
-    /LD "%SOURCE_FILE%" ^
+    /LD !SOURCE_FILES! ^
     /link ^
     /NOLOGO ^
     /DLL ^
     /DEBUG ^
     /INCREMENTAL:NO ^
-    /OUT:"%OUTPUT_DLL%" ^
-    /PDB:"%OUTPUT_PDB%"
+    /OUT:"%OUTPUT_MODULE%" ^
+    /PDB:"%OUTPUT_DEBUG_SYMBOLS%"
 
 exit /b %errorlevel%

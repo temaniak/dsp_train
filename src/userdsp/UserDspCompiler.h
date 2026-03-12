@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 
+#include "userdsp/UserDspProjectManager.h"
 #include "userdsp/UserDspHost.h"
 
 class UserDspCompiler
@@ -21,17 +22,17 @@ public:
         juce::String statusText = "Idle";
         juce::String logText;
         juce::String lastSourcePath;
-        juce::String lastDllPath;
+        juce::String lastModulePath;
     };
 
     explicit UserDspCompiler(UserDspHost& hostToUpdate);
     ~UserDspCompiler();
 
-    bool compileAsync(const juce::String& sourceCode);
+    juce::Result compileAsync(const UserDspProjectSnapshot& projectSnapshot);
     Snapshot getSnapshot() const;
 
 private:
-    void runCompilation(juce::String sourceCode);
+    void runCompilation(UserDspProjectSnapshot projectSnapshot);
     void setSnapshot(const Snapshot& newSnapshot);
     void updateState(State state, const juce::String& statusText, const juce::String& logText);
     juce::String createVersionTag();

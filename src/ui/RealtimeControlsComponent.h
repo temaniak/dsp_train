@@ -1,0 +1,54 @@
+#pragma once
+
+#include <JuceHeader.h>
+
+#include <memory>
+#include <vector>
+
+#include "audio/AudioEngine.h"
+#include "userdsp/UserDspProjectManager.h"
+
+class ControllerTileComponent;
+
+class RealtimeControlsComponent final : public juce::Component,
+                                        private juce::Timer
+{
+public:
+    RealtimeControlsComponent(AudioEngine& audioEngineToControl,
+                              UserDspProjectManager& projectManagerToEdit);
+    ~RealtimeControlsComponent() override;
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void setRefreshSuspended(bool shouldSuspend);
+
+private:
+    void timerCallback() override;
+
+    void addController(UserDspControllerType type);
+    void editController(int index);
+    void deleteController(int index);
+    void moveController(int sourceIndex, int destinationIndex);
+    void applyControllerValue(int index, float value);
+    void syncToProjectAndRuntime();
+    void rebuildTiles();
+    void updateTileLayout();
+    void showErrorMessage(const juce::String& title, const juce::String& message);
+
+    AudioEngine& audioEngine;
+    UserDspProjectManager& projectManager;
+
+    juce::Label titleLabel;
+    juce::Label statusLabel;
+    juce::Label hintLabel;
+    juce::TextButton addKnobButton { "Add Knob" };
+    juce::TextButton addButtonButton { "Add Button" };
+    juce::TextButton addToggleButton { "Add Toggle" };
+    juce::Viewport tilesViewport;
+    juce::Component tilesContent;
+    std::vector<std::unique_ptr<ControllerTileComponent>> tiles;
+    std::vector<UserDspControllerDefinition> lastDefinitions;
+    std::vector<float> previewValues;
+    bool previewValuesNeedPush = false;
+    bool layoutMatchesRuntime = false;
+};

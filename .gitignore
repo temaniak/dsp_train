@@ -11,6 +11,8 @@ build-tests/
 *.lib
 *.exp
 *.dll
+*.dylib
+*.dSYM/
 *.exe
 *.log
 *.tmp

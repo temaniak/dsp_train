@@ -2,10 +2,13 @@
 
 namespace
 {
-const char* defaultTemplateText = R"CPP(#include "UserDspApi.h"
+const char* defaultProcessorClassName = "ExampleUserProcessor";
 
-#include <algorithm>
+const char* defaultTemplateText = R"CPP(#include <algorithm>
 #include <cmath>
+
+// UserDspApi.h and DSP_EDU_DEFINE_SIMPLE_PLUGIN(...) are injected automatically.
+// Enter the class name below the editor as ExampleUserProcessor.
 
 class ExampleUserProcessor
 {
@@ -102,8 +105,6 @@ private:
     float mix = 1.0f;
     float toneState = 0.0f;
 };
-
-DSP_EDU_DEFINE_SIMPLE_PLUGIN(ExampleUserProcessor)
 )CPP";
 }
 
@@ -135,6 +136,11 @@ void UserCodeDocumentManager::setCodeText(const juce::String& newCode)
 void UserCodeDocumentManager::resetToTemplate()
 {
     setCodeText(getDefaultTemplate());
+}
+
+juce::String UserCodeDocumentManager::getDefaultProcessorClassName() const
+{
+    return defaultProcessorClassName;
 }
 
 juce::Result UserCodeDocumentManager::loadFromFile(const juce::File& file)

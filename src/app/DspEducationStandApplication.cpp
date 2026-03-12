@@ -31,7 +31,8 @@ void DspEducationStandApplication::shutdown()
 
 void DspEducationStandApplication::systemRequestedQuit()
 {
-    quit();
+    if (mainWindow == nullptr || mainWindow->tryToCloseWindow())
+        quit();
 }
 
 void DspEducationStandApplication::anotherInstanceStarted(const juce::String&)

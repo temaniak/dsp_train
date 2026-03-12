@@ -8,8 +8,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-set(JUCE_DIR "C:/Users/User/JUCE" CACHE PATH "Path to the local JUCE checkout")
+set(JUCE_DIR "$ENV{JUCE_DIR}" CACHE PATH "Path to the local JUCE checkout")
 option(DSP_EDU_BUILD_TESTS "Build minimal core logic tests" OFF)
+
+if (JUCE_DIR STREQUAL "")
+    message(FATAL_ERROR "JUCE_DIR must point to a JUCE checkout. Pass -DJUCE_DIR=/path/to/JUCE or set the JUCE_DIR environment variable.")
+endif()
 
 if (NOT EXISTS "${JUCE_DIR}/CMakeLists.txt")
     message(FATAL_ERROR "JUCE_DIR must point to a JUCE checkout. Current value: ${JUCE_DIR}")
@@ -34,10 +38,14 @@ target_sources(DspEducationStand
         src/audio/WavFileSource.cpp
         src/dsp/BuiltinProcessors.cpp
         src/presets/PresetManager.cpp
+        src/ui/DarkIdeLookAndFeel.cpp
         src/ui/OscilloscopeBuffer.cpp
         src/ui/OscilloscopeComponent.cpp
-        src/userdsp/UserCodeDocumentManager.cpp
+        src/ui/RealtimeControlsComponent.cpp
+        src/ui/ToolWindow.cpp
         src/userdsp/UserDspCompiler.cpp
+        src/userdsp/UserDspProjectManager.cpp
+        src/userdsp/UserDspProjectUtils.cpp
         src/userdsp/UserDspHost.cpp)
 
 target_include_directories(DspEducationStand
@@ -49,6 +57,7 @@ target_compile_definitions(DspEducationStand
     PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
+        JUCE_MODAL_LOOPS_PERMITTED=1
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:DspEducationStand,JUCE_PRODUCT_NAME>"
         JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:DspEducationStand,JUCE_VERSION>")
@@ -77,7 +86,9 @@ if (DSP_EDU_BUILD_TESTS)
         PRIVATE
             tests/TestMain.cpp
             src/dsp/BuiltinProcessors.cpp
-            src/presets/PresetManager.cpp)
+            src/presets/PresetManager.cpp
+            src/userdsp/UserDspProjectManager.cpp
+            src/userdsp/UserDspProjectUtils.cpp)
 
     target_include_directories(DspEducationStandTests
         PRIVATE
@@ -87,13 +98,15 @@ if (DSP_EDU_BUILD_TESTS)
     target_compile_definitions(DspEducationStandTests
         PRIVATE
             JUCE_WEB_BROWSER=0
-            JUCE_USE_CURL=0)
+            JUCE_USE_CURL=0
+            JUCE_MODAL_LOOPS_PERMITTED=1)
 
     target_link_libraries(DspEducationStandTests
         PRIVATE
             juce::juce_audio_basics
             juce::juce_core
             juce::juce_data_structures
+            juce::juce_gui_extra
         PUBLIC
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)

@@ -59,7 +59,7 @@ public:
     void setWavLooping(bool shouldLoop) noexcept;
     void setWavPositionNormalized(double newPosition) noexcept;
 
-    void setUserParameter(int index, float value) noexcept;
+    void setUserControlValue(int index, float value) noexcept;
 
     OscilloscopeBuffer& getOscilloscopeBuffer() noexcept;
     UserDspHost& getUserDspHost() noexcept;

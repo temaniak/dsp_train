@@ -8,8 +8,9 @@
     #define DSP_EDU_EXPORT extern "C"
 #endif
 
-static constexpr std::uint32_t DSP_EDU_USER_DSP_API_VERSION = 1u;
-static constexpr int DSP_EDU_USER_DSP_MAX_PARAMETERS = 4;
+static constexpr std::uint32_t DSP_EDU_USER_DSP_API_VERSION = 2u;
+static constexpr int DSP_EDU_USER_DSP_MAX_CONTROLS = 32;
+static constexpr int DSP_EDU_USER_DSP_MAX_PARAMETERS = DSP_EDU_USER_DSP_MAX_CONTROLS;
 static constexpr int DSP_EDU_USER_DSP_TEXT_CAPACITY = 32;
 
 struct DspEduParameterInfo
@@ -37,6 +38,7 @@ struct DspEduApi
     void (*reset)(DspEduInstanceHandle) noexcept = nullptr;
     void (*process)(DspEduInstanceHandle, const float* input, float* output, int numSamples) noexcept = nullptr;
     void (*setParameter)(DspEduInstanceHandle, int parameterIndex, float value) noexcept = nullptr;
+    void (*setControlValue)(DspEduInstanceHandle, int controlIndex, float value) noexcept = nullptr;
 };
 
 DSP_EDU_EXPORT const DspEduApi* dspedu_get_api() noexcept;
@@ -188,6 +190,15 @@ void setParameter(ProcessorType& processor, int parameterIndex, float value)
     if constexpr (requires { processor.setParameter(parameterIndex, value); })
         processor.setParameter(parameterIndex, value);
 }
+
+template <typename ProcessorType>
+void setControlValue(ProcessorType& processor, int controlIndex, float value)
+{
+    if constexpr (requires { processor.setControlValue(controlIndex, value); })
+        processor.setControlValue(controlIndex, value);
+    else if constexpr (requires { processor.setParameter(controlIndex, value); })
+        processor.setParameter(controlIndex, value);
+}
 } // namespace detail
 
 template <typename ProcessorType>
@@ -331,6 +342,20 @@ struct Adapter
         }
     }
 
+    static void setControlValue(DspEduInstanceHandle handle, int controlIndex, float value) noexcept
+    {
+        if (auto* processor = static_cast<ProcessorType*> (handle))
+        {
+            try
+            {
+                detail::setControlValue(*processor, controlIndex, value);
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+
     static const DspEduApi api;
 };
 
@@ -347,7 +372,8 @@ const DspEduApi Adapter<ProcessorType>::api
     &Adapter<ProcessorType>::prepare,
     &Adapter<ProcessorType>::reset,
     &Adapter<ProcessorType>::process,
-    &Adapter<ProcessorType>::setParameter
+    &Adapter<ProcessorType>::setParameter,
+    &Adapter<ProcessorType>::setControlValue
 };
 } // namespace dspedu
 

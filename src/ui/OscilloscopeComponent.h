@@ -10,6 +10,7 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void setRefreshSuspended(bool shouldSuspend);
 
 private:
     void timerCallback() override;
