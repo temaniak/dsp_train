@@ -14,10 +14,12 @@ public:
 
 private:
     void timerCallback() override;
-    void pushHistorySample(float sample) noexcept;
+    void pushHistorySample(float leftSample, float rightSample) noexcept;
 
     OscilloscopeBuffer& inputBuffer;
-    std::array<float, 1024> history {};
-    std::array<float, 2048> readScratch {};
+    std::array<float, 1024> leftHistory {};
+    std::array<float, 1024> rightHistory {};
+    std::array<float, 2048> leftReadScratch {};
+    std::array<float, 2048> rightReadScratch {};
     int historyWritePosition = 0;
 };

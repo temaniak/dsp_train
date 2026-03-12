@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 
+#include "audio/AudioConfiguration.h"
 #include "UserDspApi.h"
 #include "userdsp/UserDspControllers.h"
 
@@ -23,6 +24,12 @@ public:
         juce::String processorName = "No user DSP loaded";
         juce::String activeModulePath;
         juce::String lastError;
+        int moduleGeneration = 0;
+        PreferredAudioConfiguration preferredAudioConfiguration;
+        double preparedSampleRate = 0.0;
+        int preparedBlockSize = 0;
+        int preparedInputChannels = 0;
+        int preparedOutputChannels = 0;
         int controlCount = 0;
         std::array<ControlState, DSP_EDU_USER_DSP_MAX_CONTROLS> controls;
     };
@@ -30,9 +37,13 @@ public:
     UserDspHost();
     ~UserDspHost();
 
-    void prepare(double sampleRate, int maxBlockSize);
+    void prepare(double sampleRate, int maxBlockSize, int inputChannels, int outputChannels);
     void requestReset() noexcept;
-    void process(const float* input, float* output, int numSamples);
+    void process(const float* const* inputs,
+                 float* const* outputs,
+                 int numInputChannels,
+                 int numOutputChannels,
+                 int numSamples);
 
     void setControlValue(int index, float value) noexcept;
     float getControlValue(int index) const noexcept;
@@ -56,6 +67,8 @@ private:
     std::array<std::atomic<float>, DSP_EDU_USER_DSP_MAX_CONTROLS> controlValues;
     std::atomic<double> currentSampleRate { 44100.0 };
     std::atomic<int> currentMaxBlockSize { 512 };
+    std::atomic<int> currentInputChannels { 0 };
+    std::atomic<int> currentOutputChannels { 2 };
     std::atomic<bool> resetRequested { false };
     std::atomic<bool> swapPending { false };
 

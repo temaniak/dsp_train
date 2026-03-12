@@ -7,7 +7,8 @@ juce::Result WavFileSource::loadFromFile(const juce::File& file, juce::AudioForm
     if (reader == nullptr)
         return juce::Result::fail("Unable to open WAV file.");
 
-    juce::AudioBuffer<float> loadedData(1, static_cast<int>(reader->lengthInSamples));
+    const auto loadedChannels = juce::jlimit(1, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, static_cast<int>(reader->numChannels));
+    juce::AudioBuffer<float> loadedData(loadedChannels, static_cast<int>(reader->lengthInSamples));
 
     if (loadedData.getNumSamples() <= 0)
         return juce::Result::fail("The WAV file is empty.");
@@ -17,15 +18,14 @@ juce::Result WavFileSource::loadFromFile(const juce::File& file, juce::AudioForm
     if (! reader->read(&tempBuffer, 0, tempBuffer.getNumSamples(), 0, true, true))
         return juce::Result::fail("Failed to read WAV file contents.");
 
-    loadedData.clear();
-
-    for (int channel = 0; channel < tempBuffer.getNumChannels(); ++channel)
-        loadedData.addFrom(0, 0, tempBuffer, channel, 0, tempBuffer.getNumSamples(), 1.0f / static_cast<float>(tempBuffer.getNumChannels()));
+    for (int channel = 0; channel < loadedChannels; ++channel)
+        loadedData.copyFrom(channel, 0, tempBuffer, channel, 0, tempBuffer.getNumSamples());
 
     {
         const juce::SpinLock::ScopedLockType lock(dataLock);
         audioData = std::move(loadedData);
         loadedFileName = file.getFileName();
+        loadedChannelCount = loadedChannels;
         playbackPosition.store(0, std::memory_order_relaxed);
     }
 
@@ -35,8 +35,9 @@ juce::Result WavFileSource::loadFromFile(const juce::File& file, juce::AudioForm
 void WavFileSource::clear()
 {
     const juce::SpinLock::ScopedLockType lock(dataLock);
-    audioData.setSize(1, 0);
+    audioData.setSize(DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, 0);
     loadedFileName.clear();
+    loadedChannelCount = 0;
     playbackPosition.store(0, std::memory_order_relaxed);
 }
 
@@ -45,23 +46,26 @@ void WavFileSource::reset()
     playbackPosition.store(0, std::memory_order_relaxed);
 }
 
-void WavFileSource::prepare(double, int)
+void WavFileSource::prepare(double, int, int)
 {
 }
 
-void WavFileSource::generate(float* output, int numSamples)
+void WavFileSource::generate(float* const* outputs, int numChannels, int numSamples)
 {
-    jassert(output != nullptr);
-    juce::FloatVectorOperations::clear(output, numSamples);
+    if (outputs == nullptr || numChannels <= 0 || numSamples <= 0)
+        return;
+
+    for (int channel = 0; channel < numChannels; ++channel)
+        if (outputs[channel] != nullptr)
+            juce::FloatVectorOperations::clear(outputs[channel], numSamples);
 
     const juce::SpinLock::ScopedTryLockType lock(dataLock);
 
-    if (! lock.isLocked() || audioData.getNumSamples() == 0)
+    if (! lock.isLocked() || audioData.getNumSamples() == 0 || loadedChannelCount <= 0)
         return;
 
     auto position = playbackPosition.load(std::memory_order_relaxed);
     const auto totalSamples = static_cast<juce::int64>(audioData.getNumSamples());
-    const auto* source = audioData.getReadPointer(0);
     const auto shouldLoop = looping.load(std::memory_order_relaxed);
 
     for (int sample = 0; sample < numSamples; ++sample)
@@ -74,11 +78,46 @@ void WavFileSource::generate(float* output, int numSamples)
                 break;
         }
 
-        output[sample] = source[static_cast<int>(position)];
+        const auto currentIndex = static_cast<int>(position);
+
+        if (loadedChannelCount == 1)
+        {
+            const auto value = audioData.getReadPointer(0)[currentIndex];
+
+            for (int channel = 0; channel < numChannels; ++channel)
+                if (outputs[channel] != nullptr)
+                    outputs[channel][sample] = value;
+        }
+        else
+        {
+            const auto left = audioData.getReadPointer(0)[currentIndex];
+            const auto right = audioData.getReadPointer(1)[currentIndex];
+
+            if (numChannels == 1)
+            {
+                if (outputs[0] != nullptr)
+                    outputs[0][sample] = 0.5f * (left + right);
+            }
+            else
+            {
+                if (outputs[0] != nullptr)
+                    outputs[0][sample] = left;
+
+                if (outputs[1] != nullptr)
+                    outputs[1][sample] = right;
+            }
+        }
+
         ++position;
     }
 
     playbackPosition.store(position, std::memory_order_relaxed);
+}
+
+int WavFileSource::getChannelCount() const noexcept
+{
+    const juce::SpinLock::ScopedLockType lock(dataLock);
+    return loadedChannelCount;
 }
 
 bool WavFileSource::hasFileLoaded() const noexcept

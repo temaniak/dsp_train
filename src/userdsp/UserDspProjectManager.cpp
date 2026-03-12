@@ -6,8 +6,160 @@
 
 namespace
 {
-constexpr int projectArchiveVersion = 2;
+constexpr int projectArchiveVersion = 3;
 constexpr int zipCompressionLevel = 9;
+
+juce::Array<juce::var> intsToVar(const std::vector<int>& values)
+{
+    juce::Array<juce::var> result;
+
+    for (const auto value : values)
+        result.add(value);
+
+    return result;
+}
+
+std::vector<int> intsFromVar(const juce::var& value)
+{
+    std::vector<int> result;
+
+    if (const auto* array = value.getArray(); array != nullptr)
+    {
+        result.reserve(static_cast<std::size_t>(array->size()));
+
+        for (const auto& entry : *array)
+            result.push_back(static_cast<int>(entry));
+    }
+
+    return result;
+}
+
+juce::Array<juce::var> routingArrayToVar(const std::array<int, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS>& routing)
+{
+    juce::Array<juce::var> values;
+
+    for (const auto entry : routing)
+        values.add(entry);
+
+    return values;
+}
+
+std::array<int, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> routingArrayFromVar(const juce::var& value,
+                                                                          const std::array<int, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS>& fallback)
+{
+    auto routing = fallback;
+
+    if (const auto* array = value.getArray(); array != nullptr)
+    {
+        for (int index = 0; index < juce::jmin(array->size(), DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS); ++index)
+            routing[static_cast<std::size_t>(index)] = static_cast<int>(array->getReference(index));
+    }
+
+    return routing;
+}
+
+juce::var audioStateToVar(const ProjectAudioState& audioState)
+{
+    auto* object = new juce::DynamicObject();
+
+    auto* preferredObject = new juce::DynamicObject();
+    preferredObject->setProperty("valid", audioState.cachedPreferred.valid);
+    preferredObject->setProperty("sampleRate", audioState.cachedPreferred.sampleRate);
+    preferredObject->setProperty("blockSize", audioState.cachedPreferred.blockSize);
+    preferredObject->setProperty("inputChannels", audioState.cachedPreferred.preferredInputChannels);
+    preferredObject->setProperty("outputChannels", audioState.cachedPreferred.preferredOutputChannels);
+    object->setProperty("preferred", juce::var(preferredObject));
+
+    auto* overrideObject = new juce::DynamicObject();
+    overrideObject->setProperty("sampleRateOverridden", audioState.overrides.sampleRateOverridden);
+    overrideObject->setProperty("blockSizeOverridden", audioState.overrides.blockSizeOverridden);
+    overrideObject->setProperty("inputDeviceOverridden", audioState.overrides.inputDeviceOverridden);
+    overrideObject->setProperty("outputDeviceOverridden", audioState.overrides.outputDeviceOverridden);
+    overrideObject->setProperty("inputChannelsOverridden", audioState.overrides.inputChannelsOverridden);
+    overrideObject->setProperty("outputChannelsOverridden", audioState.overrides.outputChannelsOverridden);
+    overrideObject->setProperty("routingOverridden", audioState.overrides.routingOverridden);
+    overrideObject->setProperty("sampleRate", audioState.overrides.sampleRate);
+    overrideObject->setProperty("blockSize", audioState.overrides.blockSize);
+    object->setProperty("overrides", juce::var(overrideObject));
+
+    auto* selectionObject = new juce::DynamicObject();
+    selectionObject->setProperty("inputDeviceName", audioState.deviceSelection.inputDeviceName);
+    selectionObject->setProperty("outputDeviceName", audioState.deviceSelection.outputDeviceName);
+    selectionObject->setProperty("enabledInputChannels", intsToVar(audioState.deviceSelection.enabledInputChannels));
+    selectionObject->setProperty("enabledOutputChannels", intsToVar(audioState.deviceSelection.enabledOutputChannels));
+    selectionObject->setProperty("inputRouting", routingArrayToVar(audioState.deviceSelection.inputRouting));
+    selectionObject->setProperty("outputRouting", routingArrayToVar(audioState.deviceSelection.outputRouting));
+    object->setProperty("selection", juce::var(selectionObject));
+
+    auto* actualObject = new juce::DynamicObject();
+    actualObject->setProperty("inputDeviceName", audioState.lastKnownActual.inputDeviceName);
+    actualObject->setProperty("outputDeviceName", audioState.lastKnownActual.outputDeviceName);
+    actualObject->setProperty("sampleRate", audioState.lastKnownActual.sampleRate);
+    actualObject->setProperty("blockSize", audioState.lastKnownActual.blockSize);
+    actualObject->setProperty("activeInputChannels", audioState.lastKnownActual.activeInputChannels);
+    actualObject->setProperty("activeOutputChannels", audioState.lastKnownActual.activeOutputChannels);
+    object->setProperty("lastKnownActual", juce::var(actualObject));
+
+    return juce::var(object);
+}
+
+juce::Result audioStateFromVar(const juce::var& value, ProjectAudioState& audioState)
+{
+    audioState = {};
+
+    const auto* object = value.getDynamicObject();
+
+    if (object == nullptr)
+        return juce::Result::ok();
+
+    if (const auto* preferredObject = object->getProperty("preferred").getDynamicObject(); preferredObject != nullptr)
+    {
+        audioState.cachedPreferred.valid = static_cast<bool>(preferredObject->getProperty("valid"));
+        audioState.cachedPreferred.sampleRate = static_cast<double>(preferredObject->getProperty("sampleRate"));
+        audioState.cachedPreferred.blockSize = static_cast<int>(preferredObject->getProperty("blockSize"));
+        audioState.cachedPreferred.preferredInputChannels = juce::jlimit(0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS,
+                                                                         static_cast<int>(preferredObject->getProperty("inputChannels")));
+        audioState.cachedPreferred.preferredOutputChannels = juce::jlimit(0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS,
+                                                                          static_cast<int>(preferredObject->getProperty("outputChannels")));
+    }
+
+    if (const auto* overrideObject = object->getProperty("overrides").getDynamicObject(); overrideObject != nullptr)
+    {
+        audioState.overrides.sampleRateOverridden = static_cast<bool>(overrideObject->getProperty("sampleRateOverridden"));
+        audioState.overrides.blockSizeOverridden = static_cast<bool>(overrideObject->getProperty("blockSizeOverridden"));
+        audioState.overrides.inputDeviceOverridden = static_cast<bool>(overrideObject->getProperty("inputDeviceOverridden"));
+        audioState.overrides.outputDeviceOverridden = static_cast<bool>(overrideObject->getProperty("outputDeviceOverridden"));
+        audioState.overrides.inputChannelsOverridden = static_cast<bool>(overrideObject->getProperty("inputChannelsOverridden"));
+        audioState.overrides.outputChannelsOverridden = static_cast<bool>(overrideObject->getProperty("outputChannelsOverridden"));
+        audioState.overrides.routingOverridden = static_cast<bool>(overrideObject->getProperty("routingOverridden"));
+        audioState.overrides.sampleRate = static_cast<double>(overrideObject->getProperty("sampleRate"));
+        audioState.overrides.blockSize = static_cast<int>(overrideObject->getProperty("blockSize"));
+    }
+
+    if (const auto* selectionObject = object->getProperty("selection").getDynamicObject(); selectionObject != nullptr)
+    {
+        audioState.deviceSelection.inputDeviceName = selectionObject->getProperty("inputDeviceName").toString();
+        audioState.deviceSelection.outputDeviceName = selectionObject->getProperty("outputDeviceName").toString();
+        audioState.deviceSelection.enabledInputChannels = intsFromVar(selectionObject->getProperty("enabledInputChannels"));
+        audioState.deviceSelection.enabledOutputChannels = intsFromVar(selectionObject->getProperty("enabledOutputChannels"));
+        audioState.deviceSelection.inputRouting = routingArrayFromVar(selectionObject->getProperty("inputRouting"),
+                                                                     audioState.deviceSelection.inputRouting);
+        audioState.deviceSelection.outputRouting = routingArrayFromVar(selectionObject->getProperty("outputRouting"),
+                                                                      audioState.deviceSelection.outputRouting);
+    }
+
+    if (const auto* actualObject = object->getProperty("lastKnownActual").getDynamicObject(); actualObject != nullptr)
+    {
+        audioState.lastKnownActual.inputDeviceName = actualObject->getProperty("inputDeviceName").toString();
+        audioState.lastKnownActual.outputDeviceName = actualObject->getProperty("outputDeviceName").toString();
+        audioState.lastKnownActual.sampleRate = static_cast<double>(actualObject->getProperty("sampleRate"));
+        audioState.lastKnownActual.blockSize = static_cast<int>(actualObject->getProperty("blockSize"));
+        audioState.lastKnownActual.activeInputChannels = static_cast<int>(actualObject->getProperty("activeInputChannels"));
+        audioState.lastKnownActual.activeOutputChannels = static_cast<int>(actualObject->getProperty("activeOutputChannels"));
+    }
+
+    return juce::Result::ok();
+}
 
 juce::var nodeToVar(const UserDspProjectNode& node)
 {
@@ -213,6 +365,11 @@ const std::vector<UserDspControllerDefinition>& UserDspProjectManager::getContro
     return controllerDefinitions;
 }
 
+const ProjectAudioState& UserDspProjectManager::getAudioState() const noexcept
+{
+    return audioState;
+}
+
 bool UserDspProjectManager::hasUnsavedChanges() const noexcept
 {
     return dirty;
@@ -227,6 +384,17 @@ void UserDspProjectManager::setProcessorClassName(const juce::String& newProcess
 
     processorClassName = trimmed;
     setDirty(true);
+}
+
+void UserDspProjectManager::setAudioState(const ProjectAudioState& newAudioState, bool markDirty)
+{
+    if (audioState == newAudioState)
+        return;
+
+    audioState = newAudioState;
+
+    if (markDirty)
+        setDirty(true);
 }
 
 juce::Result UserDspProjectManager::addController(UserDspControllerType type)
@@ -402,6 +570,9 @@ juce::Result UserDspProjectManager::loadProjectArchive(const juce::File& fileToL
         return controllerLoadResult;
     }
 
+    if (const auto audioStateLoadResult = audioStateFromVar(projectObject->getProperty("audioState"), audioState); audioStateLoadResult.failed())
+        return audioStateLoadResult;
+
     if (projectName.isEmpty())
         projectName = archiveFile.getFileNameWithoutExtension();
 
@@ -444,6 +615,7 @@ juce::Result UserDspProjectManager::saveProjectAs(const juce::File& fileToSave)
     projectObject->setProperty("processorClass", processorClassName);
     projectObject->setProperty("activeFilePath", activeFilePath);
     projectObject->setProperty("controllers", controllerDefinitionsToVar(controllerDefinitions));
+    projectObject->setProperty("audioState", audioStateToVar(audioState));
     projectObject->setProperty("tree", nodeToVar(*rootNode));
 
     const auto projectText = juce::JSON::toString(juce::var(projectObject), true);
@@ -800,6 +972,9 @@ void UserDspProjectManager::resetToNewProjectState()
     archiveFile = juce::File();
     processorClassName = userdsp::getDefaultTemplateProcessorClassName();
     controllerDefinitions = userdsp::getDefaultTemplateControllers();
+    audioState = {};
+    audioState.cachedPreferred.preferredInputChannels = 1;
+    audioState.cachedPreferred.preferredOutputChannels = 2;
 
     auto* srcFolder = addFolderNode(*rootNode, "src");
     addFolderNode(*rootNode, "include");

@@ -43,8 +43,10 @@ juce::Result PresetManager::loadPreset(const juce::File& sourceFile, BuiltinPres
 
     const auto* array = values.getArray();
 
+    const auto arraySize = static_cast<std::size_t>(array->size());
+
     for (std::size_t index = 0; index < preset.parameterValues.size(); ++index)
-        preset.parameterValues[index] = index < array->size() ? static_cast<float>(array->getReference(static_cast<int>(index))) : 0.0f;
+        preset.parameterValues[index] = index < arraySize ? static_cast<float>(array->getReference(static_cast<int>(index))) : 0.0f;
 
     return juce::Result::ok();
 }

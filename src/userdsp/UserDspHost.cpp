@@ -3,6 +3,52 @@
 namespace
 {
 using GetApiFunction = const DspEduApi* (*)() noexcept;
+
+PreferredAudioConfiguration preferredConfigurationFromApi(const DspEduPreferredAudioConfig& config) noexcept
+{
+    PreferredAudioConfiguration preferred;
+    preferred.valid = config.preferredSampleRate > 0.0
+                   || config.preferredBlockSize > 0
+                   || config.preferredInputChannels > 0
+                   || config.preferredOutputChannels > 0;
+    preferred.sampleRate = config.preferredSampleRate;
+    preferred.blockSize = juce::jmax(0, config.preferredBlockSize);
+    preferred.preferredInputChannels = juce::jlimit(0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, config.preferredInputChannels);
+    preferred.preferredOutputChannels = juce::jlimit(0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, config.preferredOutputChannels);
+    return preferred;
+}
+
+void copyInputToOutput(const float* const* inputs,
+                       float* const* outputs,
+                       int numInputChannels,
+                       int numOutputChannels,
+                       int numSamples) noexcept
+{
+    if (outputs == nullptr || numSamples <= 0)
+        return;
+
+    for (int channel = 0; channel < numOutputChannels; ++channel)
+    {
+        auto* output = outputs[channel];
+
+        if (output == nullptr)
+            continue;
+
+        if (inputs == nullptr || numInputChannels <= 0)
+        {
+            juce::FloatVectorOperations::clear(output, numSamples);
+            continue;
+        }
+
+        const auto sourceChannel = juce::jlimit(0, juce::jmax(0, numInputChannels - 1), channel);
+        const auto* input = inputs[sourceChannel];
+
+        if (input != nullptr)
+            juce::FloatVectorOperations::copy(output, input, numSamples);
+        else
+            juce::FloatVectorOperations::clear(output, numSamples);
+    }
+}
 }
 
 struct UserDspHost::Runtime
@@ -12,6 +58,7 @@ struct UserDspHost::Runtime
     DspEduInstanceHandle instance = nullptr;
     juce::File moduleFile;
     juce::String processorName;
+    PreferredAudioConfiguration preferredAudioConfiguration;
     int controlCount = 0;
 
     ~Runtime()
@@ -36,13 +83,28 @@ UserDspHost::~UserDspHost()
     activeRuntime.reset();
 }
 
-void UserDspHost::prepare(double sampleRate, int maxBlockSize)
+void UserDspHost::prepare(double sampleRate, int maxBlockSize, int inputChannels, int outputChannels)
 {
     currentSampleRate.store(sampleRate > 0.0 ? sampleRate : 44100.0, std::memory_order_relaxed);
     currentMaxBlockSize.store(juce::jmax(1, maxBlockSize), std::memory_order_relaxed);
+    currentInputChannels.store(juce::jlimit(0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, inputChannels), std::memory_order_relaxed);
+    currentOutputChannels.store(juce::jlimit(0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, outputChannels), std::memory_order_relaxed);
 
     if (activeRuntime != nullptr && activeRuntime->api != nullptr && activeRuntime->api->prepare != nullptr)
-        activeRuntime->api->prepare(activeRuntime->instance, currentSampleRate.load(std::memory_order_relaxed), currentMaxBlockSize.load(std::memory_order_relaxed));
+    {
+        DspEduProcessSpec spec;
+        spec.sampleRate = currentSampleRate.load(std::memory_order_relaxed);
+        spec.maximumBlockSize = currentMaxBlockSize.load(std::memory_order_relaxed);
+        spec.activeInputChannels = currentInputChannels.load(std::memory_order_relaxed);
+        spec.activeOutputChannels = currentOutputChannels.load(std::memory_order_relaxed);
+        activeRuntime->api->prepare(activeRuntime->instance, &spec);
+    }
+
+    const juce::ScopedLock lock(snapshotLock);
+    snapshot.preparedSampleRate = currentSampleRate.load(std::memory_order_relaxed);
+    snapshot.preparedBlockSize = currentMaxBlockSize.load(std::memory_order_relaxed);
+    snapshot.preparedInputChannels = currentInputChannels.load(std::memory_order_relaxed);
+    snapshot.preparedOutputChannels = currentOutputChannels.load(std::memory_order_relaxed);
 }
 
 void UserDspHost::requestReset() noexcept
@@ -50,13 +112,17 @@ void UserDspHost::requestReset() noexcept
     resetRequested.store(true, std::memory_order_relaxed);
 }
 
-void UserDspHost::process(const float* input, float* output, int numSamples)
+void UserDspHost::process(const float* const* inputs,
+                          float* const* outputs,
+                          int numInputChannels,
+                          int numOutputChannels,
+                          int numSamples)
 {
     commitPendingRuntimeSwap();
 
     if (activeRuntime == nullptr || activeRuntime->api == nullptr)
     {
-        juce::FloatVectorOperations::copy(output, input, numSamples);
+        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
         return;
     }
 
@@ -66,7 +132,7 @@ void UserDspHost::process(const float* input, float* output, int numSamples)
     for (int index = 0; index < activeRuntime->controlCount; ++index)
         activeRuntime->api->setControlValue(activeRuntime->instance, index, controlValues[static_cast<std::size_t>(index)].load(std::memory_order_relaxed));
 
-    activeRuntime->api->process(activeRuntime->instance, input, output, numSamples);
+    activeRuntime->api->process(activeRuntime->instance, inputs, outputs, numInputChannels, numOutputChannels, numSamples);
 }
 
 void UserDspHost::setControlValue(int index, float value) noexcept
@@ -143,10 +209,20 @@ juce::Result UserDspHost::loadModuleFromFile(const juce::File& moduleFile,
     runtime->processorName = runtime->api->getProcessorName(runtime->instance);
     runtime->controlCount = static_cast<int>(controllerDefinitions.size());
 
+    DspEduPreferredAudioConfig preferredConfig;
+
+    if (runtime->api->getPreferredAudioConfig != nullptr && runtime->api->getPreferredAudioConfig(runtime->instance, &preferredConfig) == 1)
+        runtime->preferredAudioConfiguration = preferredConfigurationFromApi(preferredConfig);
+
     for (int index = 0; index < DSP_EDU_USER_DSP_MAX_CONTROLS; ++index)
         controlValues[static_cast<std::size_t>(index)].store(0.0f, std::memory_order_relaxed);
 
-    runtime->api->prepare(runtime->instance, currentSampleRate.load(std::memory_order_relaxed), currentMaxBlockSize.load(std::memory_order_relaxed));
+    DspEduProcessSpec spec;
+    spec.sampleRate = currentSampleRate.load(std::memory_order_relaxed);
+    spec.maximumBlockSize = currentMaxBlockSize.load(std::memory_order_relaxed);
+    spec.activeInputChannels = currentInputChannels.load(std::memory_order_relaxed);
+    spec.activeOutputChannels = currentOutputChannels.load(std::memory_order_relaxed);
+    runtime->api->prepare(runtime->instance, &spec);
     runtime->api->reset(runtime->instance);
 
     {
@@ -155,6 +231,12 @@ juce::Result UserDspHost::loadModuleFromFile(const juce::File& moduleFile,
         snapshot.processorName = runtime->processorName;
         snapshot.activeModulePath = moduleFile.getFullPathName();
         snapshot.lastError.clear();
+        ++snapshot.moduleGeneration;
+        snapshot.preferredAudioConfiguration = runtime->preferredAudioConfiguration;
+        snapshot.preparedSampleRate = spec.sampleRate;
+        snapshot.preparedBlockSize = spec.maximumBlockSize;
+        snapshot.preparedInputChannels = spec.activeInputChannels;
+        snapshot.preparedOutputChannels = spec.activeOutputChannels;
         snapshot.controlCount = runtime->controlCount;
 
         for (int index = 0; index < DSP_EDU_USER_DSP_MAX_CONTROLS; ++index)

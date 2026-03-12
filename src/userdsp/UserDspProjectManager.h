@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "audio/AudioConfiguration.h"
 #include "userdsp/UserDspControllers.h"
 
 enum class UserDspProjectNodeType
@@ -54,9 +55,11 @@ public:
     juce::String getActiveFilePath() const;
     juce::String getProcessorClassName() const;
     const std::vector<UserDspControllerDefinition>& getControllerDefinitions() const noexcept;
+    const ProjectAudioState& getAudioState() const noexcept;
     bool hasUnsavedChanges() const noexcept;
 
     void setProcessorClassName(const juce::String& newProcessorClassName);
+    void setAudioState(const ProjectAudioState& newAudioState, bool markDirty = true);
     juce::Result addController(UserDspControllerType type);
     juce::Result updateController(int index, const UserDspControllerDefinition& definition);
     juce::Result removeController(int index);
@@ -109,6 +112,7 @@ private:
     juce::String activeFilePath;
     juce::String processorClassName;
     std::vector<UserDspControllerDefinition> controllerDefinitions;
+    ProjectAudioState audioState;
     bool dirty = false;
     bool suppressDocumentNotifications = false;
     juce::CodeDocument document;

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 
+#include "audio/AudioConfiguration.h"
 #include "audio/SignalSources.h"
 #include "audio/WavFileSource.h"
 #include "dsp/BuiltinProcessors.h"
@@ -32,6 +33,32 @@ public:
         juce::String wavFileName = "No WAV loaded";
         juce::String deviceError;
         BuiltinProcessorType builtinProcessor = BuiltinProcessorType::bypass;
+
+        PreferredAudioConfiguration preferredAudioConfiguration;
+        AudioOverrideState overrides;
+        SavedActualAudioConfiguration lastKnownActual;
+        double requestedSampleRate = 0.0;
+        int requestedBlockSize = 0;
+        int requestedInputChannels = 1;
+        int requestedOutputChannels = 2;
+        juce::String inputDeviceName;
+        juce::String outputDeviceName;
+        juce::StringArray availableInputDevices;
+        juce::StringArray availableOutputDevices;
+        juce::Array<double> availableSampleRates;
+        juce::Array<int> availableBlockSizes;
+        juce::StringArray inputChannelNames;
+        juce::StringArray outputChannelNames;
+        std::vector<int> enabledInputChannels;
+        std::vector<int> enabledOutputChannels;
+        std::array<int, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> inputRouting { 0, 1 };
+        std::array<int, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> outputRouting { 0, 1 };
+        juce::String preferredStatusText;
+        juce::String requestedStatusText;
+        juce::String actualStatusText;
+        juce::String overrideStatusText;
+        juce::String warningStatusText;
+        std::vector<AudioStatusMessage> statusMessages;
     };
 
     AudioEngine();
@@ -39,6 +66,8 @@ public:
 
     juce::Result initialise();
     Snapshot getSnapshot() const;
+    ProjectAudioState getProjectAudioState() const;
+    juce::Result applyProjectAudioState(const ProjectAudioState& state);
 
     void startTransport() noexcept;
     void stopTransport() noexcept;
@@ -75,8 +104,44 @@ public:
     void audioDeviceError(const juce::String& errorMessage) override;
 
 private:
+    struct ResolvedDeviceState
+    {
+        ProjectAudioState projectAudioState;
+        juce::String inputDeviceName;
+        juce::String outputDeviceName;
+        juce::StringArray availableInputDevices;
+        juce::StringArray availableOutputDevices;
+        juce::Array<double> availableSampleRates;
+        juce::Array<int> availableBlockSizes;
+        juce::StringArray inputChannelNames;
+        juce::StringArray outputChannelNames;
+        std::vector<int> enabledInputChannels;
+        std::vector<int> enabledOutputChannels;
+        std::array<int, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> resolvedInputSlots { -1, -1 };
+        std::array<int, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> resolvedOutputSlots { -1, -1 };
+        std::vector<AudioStatusMessage> statusMessages;
+        double requestedSampleRate = 0.0;
+        int requestedBlockSize = 0;
+        int requestedInputChannels = 1;
+        int requestedOutputChannels = 2;
+        double activeSampleRate = 0.0;
+        int activeBlockSize = 0;
+        int activeInputChannels = 0;
+        int activeOutputChannels = 0;
+    };
+
     void requestResetForNextBlock() noexcept;
     void resetSourcesForCurrentSelection() noexcept;
+    ResolvedDeviceState buildResolvedDeviceState(const ProjectAudioState& state, bool applySetup);
+    std::unique_ptr<juce::AudioIODevice> createProbeDevice(const juce::String& inputDeviceName,
+                                                           const juce::String& outputDeviceName) const;
+    void publishResolvedDeviceState(const ResolvedDeviceState& resolvedState);
+    void routeHardwareInput(const float* const* inputChannelData, int numInputChannels, int logicalInputChannels, int numSamples) noexcept;
+    void generateInternalSource(int logicalInputChannels, int numSamples) noexcept;
+    void routeProcessedToOutputs(float* const* outputChannelData, int numOutputChannels, int logicalOutputChannels, int numSamples) noexcept;
+    void updateStatusTexts(Snapshot& snapshot) const;
+    std::vector<int> getSelectedChannelsFromMask(const juce::BigInteger& mask, int maxChannels) const;
+    juce::BigInteger createChannelMask(const std::vector<int>& indices, int maxChannels) const;
 
     juce::AudioDeviceManager deviceManager;
     juce::AudioFormatManager audioFormatManager;
@@ -97,8 +162,28 @@ private:
     std::atomic<float> sourceGain { 0.2f };
     std::atomic<double> currentSampleRate { 0.0 };
     std::atomic<int> currentBlockSize { 0 };
+    std::atomic<int> currentLogicalInputChannels { 1 };
+    std::atomic<int> currentLogicalOutputChannels { 2 };
+    std::array<std::atomic<int>, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> currentResolvedInputSlots;
+    std::array<std::atomic<int>, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> currentResolvedOutputSlots;
     std::atomic<bool> resetForNextBlock { true };
 
     mutable juce::CriticalSection stateLock;
+    ProjectAudioState currentProjectAudioState;
+    juce::StringArray availableInputDevices;
+    juce::StringArray availableOutputDevices;
+    juce::Array<double> availableSampleRates;
+    juce::Array<int> availableBlockSizes;
+    juce::StringArray inputChannelNames;
+    juce::StringArray outputChannelNames;
+    std::vector<int> enabledInputChannels;
+    std::vector<int> enabledOutputChannels;
+    std::vector<AudioStatusMessage> currentStatusMessages;
+    juce::String currentInputDeviceName;
+    juce::String currentOutputDeviceName;
+    double requestedSampleRate = 0.0;
+    int requestedBlockSize = 0;
+    int requestedInputChannels = 1;
+    int requestedOutputChannels = 2;
     juce::String lastDeviceError;
 };

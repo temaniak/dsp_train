@@ -23,21 +23,35 @@ public:
         return "Drive Lab Example";
     }
 
-    void prepareToPlay(double newSampleRate)
+    bool getPreferredAudioConfig(DspEduPreferredAudioConfig& config) const
     {
-        sampleRate = std::max(1.0, newSampleRate);
+        config.preferredSampleRate = 48000.0;
+        config.preferredBlockSize = 256;
+        config.preferredInputChannels = 2;
+        config.preferredOutputChannels = 2;
+        return true;
+    }
+
+    void prepare(const DspEduProcessSpec& spec)
+    {
+        sampleRate = std::max(1.0, spec.sampleRate);
         reset();
     }
 
     void reset()
     {
-        filterState = 0.0f;
+        filterState[0] = 0.0f;
+        filterState[1] = 0.0f;
         exciteEnvelope = 0.0f;
     }
 
-    void processAudio(float* buffer, int numSamples)
+    void process(const float* const* inputs,
+                 float* const* outputs,
+                 int numInputChannels,
+                 int numOutputChannels,
+                 int numSamples)
     {
-        if (controls.bypassToggle)
+        if (numOutputChannels <= 0 || outputs == nullptr || outputs[0] == nullptr)
             return;
 
         const auto drive = remap01(controls.driveKnob, 1.0f, 14.0f);
@@ -45,15 +59,40 @@ public:
         const auto mix = controls.mixKnob;
         const auto exciteTarget = controls.exciteButton ? 1.0f : 0.0f;
         const auto alpha = computeLowpassAlpha(toneHz);
+        const auto* inputLeft = numInputChannels > 0 && inputs != nullptr ? inputs[0] : nullptr;
+        const auto* inputRight = numInputChannels > 1 && inputs != nullptr ? inputs[1] : inputLeft;
+        auto* outputLeft = outputs[0];
+        auto* outputRight = numOutputChannels > 1 ? outputs[1] : outputs[0];
 
         for (int sample = 0; sample < numSamples; ++sample)
         {
+            const auto dryLeft = inputLeft != nullptr ? inputLeft[sample] : 0.0f;
+            const auto dryRight = inputRight != nullptr ? inputRight[sample] : dryLeft;
+
+            if (controls.bypassToggle)
+            {
+                outputLeft[sample] = dryLeft;
+
+                if (numOutputChannels > 1 && outputRight != nullptr)
+                    outputRight[sample] = dryRight;
+
+                continue;
+            }
+
             exciteEnvelope += 0.18f * (exciteTarget - exciteEnvelope);
-            const auto dry = buffer[sample];
-            const auto excited = dry + 0.22f * exciteEnvelope;
-            const auto driven = std::tanh(excited * drive);
-            filterState += alpha * (driven - filterState);
-            buffer[sample] = dry + mix * (filterState - dry);
+            const auto excitedLeft = dryLeft + 0.22f * exciteEnvelope;
+            const auto excitedRight = dryRight + 0.22f * exciteEnvelope;
+            const auto drivenLeft = std::tanh(excitedLeft * drive);
+            const auto drivenRight = std::tanh(excitedRight * drive);
+            filterState[0] += alpha * (drivenLeft - filterState[0]);
+            filterState[1] += alpha * (drivenRight - filterState[1]);
+            const auto wetLeft = dryLeft + mix * (filterState[0] - dryLeft);
+            const auto wetRight = dryRight + mix * (filterState[1] - dryRight);
+            outputLeft[sample] = wetLeft;
+
+            if (numOutputChannels > 1 && outputRight != nullptr)
+                outputRight[sample] = wetRight;
+
             exciteEnvelope *= 0.995f;
         }
     }
@@ -73,7 +112,7 @@ private:
     }
 
     double sampleRate = 44100.0;
-    float filterState = 0.0f;
+    float filterState[2] { 0.0f, 0.0f };
     float exciteEnvelope = 0.0f;
 };
 )CPP";
@@ -621,17 +660,21 @@ juce::String buildWrapperSourceSnippet(const std::vector<UserDspControllerDefini
     wrappedSource << "    {\n";
     wrappedSource << "        return dspedu::detail::getProcessorName(processor);\n";
     wrappedSource << "    }\n\n";
-    wrappedSource << "    void prepare(double sampleRate, int maxBlockSize)\n";
+    wrappedSource << "    bool getPreferredAudioConfig(DspEduPreferredAudioConfig& config)\n";
     wrappedSource << "    {\n";
-    wrappedSource << "        dspedu::detail::prepare(processor, sampleRate, maxBlockSize);\n";
+    wrappedSource << "        return dspedu::detail::getPreferredAudioConfig(processor, config);\n";
+    wrappedSource << "    }\n\n";
+    wrappedSource << "    void prepare(const DspEduProcessSpec& spec)\n";
+    wrappedSource << "    {\n";
+    wrappedSource << "        dspedu::detail::prepare(processor, spec);\n";
     wrappedSource << "    }\n\n";
     wrappedSource << "    void reset()\n";
     wrappedSource << "    {\n";
     wrappedSource << "        dspedu::detail::reset(processor);\n";
     wrappedSource << "    }\n\n";
-    wrappedSource << "    void process(const float* input, float* output, int numSamples)\n";
+    wrappedSource << "    void process(const float* const* inputs, float* const* outputs, int numInputChannels, int numOutputChannels, int numSamples)\n";
     wrappedSource << "    {\n";
-    wrappedSource << "        dspedu::detail::process(processor, input, output, numSamples);\n";
+    wrappedSource << "        dspedu::detail::process(processor, inputs, outputs, numInputChannels, numOutputChannels, numSamples);\n";
     wrappedSource << "    }\n\n";
     wrappedSource << "    void setControlValue(int controlIndex, float value)\n";
     wrappedSource << "    {\n";

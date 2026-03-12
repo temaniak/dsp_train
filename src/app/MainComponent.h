@@ -31,6 +31,7 @@ private:
     void populateCombos();
     void refreshEngineState();
     void refreshBuiltinControls();
+    void refreshAudioDeviceControls();
     void refreshUserControls();
     void refreshCompilerState();
     void refreshProjectState();
@@ -64,6 +65,9 @@ private:
     void showControlsWindow();
     void ensureOscilloscopeWindow();
     void ensureControlsWindow();
+    void applyCurrentProjectAudioState();
+    bool rebuildAudioChannelButtons(const AudioEngine::Snapshot& snapshot);
+    void updateProjectAudioState(const std::function<void(ProjectAudioState&)>& mutator);
     void setToolWindowRefreshSuspended(bool shouldSuspend);
     bool pauseRefreshTimer();
     void resumeRefreshTimer(bool shouldResume);
@@ -99,6 +103,7 @@ private:
     juce::Label wavHeader;
     juce::Label dspHeader;
     juce::Label builtinHeader;
+    juce::Label deviceHeader;
     juce::Label userHeader;
     juce::Label toolsHeader;
     juce::Label editorHeader;
@@ -115,8 +120,25 @@ private:
     juce::Slider frequencySlider;
     juce::Label gainLabel;
     juce::Label frequencyLabel;
+    juce::Label inputDeviceLabel;
+    juce::Label outputDeviceLabel;
     juce::Label sampleRateLabel;
     juce::Label blockSizeLabel;
+    juce::Label inputChannelsLabel;
+    juce::Label outputChannelsLabel;
+    juce::Label inputRoutingLabel;
+    juce::Label outputRoutingLabel;
+    juce::Label preferredAudioStatusLabel;
+    juce::Label requestedAudioStatusLabel;
+    juce::Label actualAudioStatusLabel;
+    juce::Label overrideAudioStatusLabel;
+    juce::Label warningAudioStatusLabel;
+    juce::ComboBox inputDeviceCombo;
+    juce::ComboBox outputDeviceCombo;
+    juce::ComboBox sampleRateCombo;
+    juce::ComboBox blockSizeCombo;
+    std::array<juce::ComboBox, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> inputRoutingCombos;
+    std::array<juce::ComboBox, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> outputRoutingCombos;
 
     juce::TextButton loadWavButton { "Load WAV" };
     juce::Label wavFileLabel;
@@ -169,6 +191,9 @@ private:
     std::unique_ptr<ToolWindow> oscilloscopeWindow;
     std::unique_ptr<ToolWindow> controlsWindow;
     std::unique_ptr<ide::DarkIdeLookAndFeel> ideLookAndFeel;
+    juce::OwnedArray<juce::ToggleButton> inputChannelButtons;
+    juce::OwnedArray<juce::ToggleButton> outputChannelButtons;
+    int lastSeenUserModuleGeneration = 0;
     juce::String navigatorSelectionPath;
     float codeFontSize = 17.0f;
     float controlsPanelExpandedWidth = 360.0f;

@@ -2,22 +2,32 @@
 
 OscilloscopeBuffer::OscilloscopeBuffer(int capacitySamples)
     : fifo(juce::jmax(1024, capacitySamples)),
-      storage(static_cast<std::size_t>(juce::jmax(1024, capacitySamples)), 0.0f)
+      leftStorage(static_cast<std::size_t>(juce::jmax(1024, capacitySamples)), 0.0f),
+      rightStorage(static_cast<std::size_t>(juce::jmax(1024, capacitySamples)), 0.0f)
 {
 }
 
-void OscilloscopeBuffer::pushSamples(const float* samples, int numSamples) noexcept
+void OscilloscopeBuffer::pushSamples(const float* const* channels, int numChannels, int numSamples) noexcept
 {
-    if (samples == nullptr || numSamples <= 0)
+    if (channels == nullptr || numSamples <= 0 || numChannels <= 0)
         return;
 
-    auto* source = samples;
     auto remaining = numSamples;
+    const auto* leftSource = channels[0];
+    const auto* rightSource = numChannels > 1 ? channels[1] : channels[0];
 
-    if (remaining > static_cast<int>(storage.size()))
+    if (leftSource == nullptr)
+        return;
+
+    if (rightSource == nullptr)
+        rightSource = leftSource;
+
+    if (remaining > static_cast<int>(leftStorage.size()))
     {
-        source += remaining - static_cast<int>(storage.size());
-        remaining = static_cast<int>(storage.size());
+        const auto skip = remaining - static_cast<int>(leftStorage.size());
+        leftSource += skip;
+        rightSource += skip;
+        remaining = static_cast<int>(leftStorage.size());
     }
 
     while (remaining > 0)
@@ -30,19 +40,26 @@ void OscilloscopeBuffer::pushSamples(const float* samples, int numSamples) noexc
         auto scope = fifo.write(writeSize);
 
         if (scope.blockSize1 > 0)
-            juce::FloatVectorOperations::copy(storage.data() + scope.startIndex1, source, scope.blockSize1);
+        {
+            juce::FloatVectorOperations::copy(leftStorage.data() + scope.startIndex1, leftSource, scope.blockSize1);
+            juce::FloatVectorOperations::copy(rightStorage.data() + scope.startIndex1, rightSource, scope.blockSize1);
+        }
 
         if (scope.blockSize2 > 0)
-            juce::FloatVectorOperations::copy(storage.data() + scope.startIndex2, source + scope.blockSize1, scope.blockSize2);
+        {
+            juce::FloatVectorOperations::copy(leftStorage.data() + scope.startIndex2, leftSource + scope.blockSize1, scope.blockSize2);
+            juce::FloatVectorOperations::copy(rightStorage.data() + scope.startIndex2, rightSource + scope.blockSize1, scope.blockSize2);
+        }
 
-        source += writeSize;
+        leftSource += writeSize;
+        rightSource += writeSize;
         remaining -= writeSize;
     }
 }
 
-int OscilloscopeBuffer::popAvailable(float* destination, int maxSamples) noexcept
+int OscilloscopeBuffer::popAvailable(float* leftDestination, float* rightDestination, int maxSamples) noexcept
 {
-    if (destination == nullptr || maxSamples <= 0)
+    if (leftDestination == nullptr || rightDestination == nullptr || maxSamples <= 0)
         return 0;
 
     const auto ready = juce::jmin(maxSamples, fifo.getNumReady());
@@ -55,13 +72,15 @@ int OscilloscopeBuffer::popAvailable(float* destination, int maxSamples) noexcep
 
     if (scope.blockSize1 > 0)
     {
-        juce::FloatVectorOperations::copy(destination, storage.data() + scope.startIndex1, scope.blockSize1);
+        juce::FloatVectorOperations::copy(leftDestination, leftStorage.data() + scope.startIndex1, scope.blockSize1);
+        juce::FloatVectorOperations::copy(rightDestination, rightStorage.data() + scope.startIndex1, scope.blockSize1);
         copied += scope.blockSize1;
     }
 
     if (scope.blockSize2 > 0)
     {
-        juce::FloatVectorOperations::copy(destination + copied, storage.data() + scope.startIndex2, scope.blockSize2);
+        juce::FloatVectorOperations::copy(leftDestination + copied, leftStorage.data() + scope.startIndex2, scope.blockSize2);
+        juce::FloatVectorOperations::copy(rightDestination + copied, rightStorage.data() + scope.startIndex2, scope.blockSize2);
         copied += scope.blockSize2;
     }
 
@@ -71,5 +90,6 @@ int OscilloscopeBuffer::popAvailable(float* destination, int maxSamples) noexcep
 void OscilloscopeBuffer::clear() noexcept
 {
     fifo.reset();
-    std::fill(storage.begin(), storage.end(), 0.0f);
+    std::fill(leftStorage.begin(), leftStorage.end(), 0.0f);
+    std::fill(rightStorage.begin(), rightStorage.end(), 0.0f);
 }

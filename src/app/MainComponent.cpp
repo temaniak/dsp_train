@@ -1,5 +1,6 @@
 #include "app/MainComponent.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "ui/OscilloscopeComponent.h"
@@ -45,6 +46,13 @@ void configureStatusLabel(juce::Label& label)
     label.setColour(juce::Label::textColourId, ide::textSecondary);
     label.setJustificationType(juce::Justification::centredLeft);
     label.setBorderSize(juce::BorderSize<int>(0, 8, 0, 8));
+}
+
+void configureChannelToggleButton(juce::ToggleButton& button)
+{
+    button.setColour(juce::ToggleButton::textColourId, ide::text);
+    button.setColour(juce::ToggleButton::tickColourId, ide::constant);
+    button.setColour(juce::ToggleButton::tickDisabledColourId, ide::textMuted);
 }
 
 void configureAlertWindowLookAndFeel(juce::AlertWindow& window, juce::LookAndFeel* lookAndFeel)
@@ -252,6 +260,7 @@ MainComponent::MainComponent()
 
     configureSectionLabel(sourceHeader, "Source");
     configureSectionLabel(transportHeader, "Transport");
+    configureSectionLabel(deviceHeader, "Audio Device");
     configureSectionLabel(wavHeader, "WAV Source");
     configureSectionLabel(dspHeader, "DSP Mode");
     configureSectionLabel(builtinHeader, "Built-in DSP");
@@ -263,14 +272,30 @@ MainComponent::MainComponent()
 
     configureBodyLabel(gainLabel, "Gain");
     configureBodyLabel(frequencyLabel, "Sine Frequency");
+    configureBodyLabel(inputDeviceLabel, "Input Device");
+    configureBodyLabel(outputDeviceLabel, "Output Device");
+    configureBodyLabel(sampleRateLabel, "Sample Rate");
+    configureBodyLabel(blockSizeLabel, "Block Size");
+    configureBodyLabel(inputChannelsLabel, "Input Channels");
+    configureBodyLabel(outputChannelsLabel, "Output Channels");
+    configureBodyLabel(inputRoutingLabel, "Input Routing");
+    configureBodyLabel(outputRoutingLabel, "Output Routing");
     configureBodyLabel(wavPositionLabel, "Position");
-    configureBodyLabel(sampleRateLabel, "Sample Rate: --");
-    configureBodyLabel(blockSizeLabel, "Block Size: --");
     configureBodyLabel(wavFileLabel, "No WAV loaded");
     configureBodyLabel(processorClassLabel, "Processor Class");
     configureBodyLabel(codeFontSizeLabel, "Code Font");
     configureBodyLabel(codeFontSizeValueLabel, {});
     configureBodyLabel(userModuleStatusLabel, {});
+    configureStatusLabel(preferredAudioStatusLabel);
+    configureStatusLabel(requestedAudioStatusLabel);
+    configureStatusLabel(actualAudioStatusLabel);
+    configureStatusLabel(overrideAudioStatusLabel);
+    configureStatusLabel(warningAudioStatusLabel);
+    preferredAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
+    requestedAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
+    actualAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
+    overrideAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
+    warningAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
     userModuleStatusLabel.setJustificationType(juce::Justification::topLeft);
     configureStatusLabel(projectPathLabel);
     configureStatusLabel(compileStatusLabel);
@@ -296,6 +321,27 @@ MainComponent::MainComponent()
 
     for (auto& slider : builtinParameterSliders)
         configureSlider(slider, 0.0, 1.0, 0.001);
+
+    auto configureCombo = [] (juce::ComboBox& combo)
+    {
+        combo.setColour(juce::ComboBox::backgroundColourId, ide::panel);
+        combo.setColour(juce::ComboBox::textColourId, ide::text);
+        combo.setColour(juce::ComboBox::outlineColourId, ide::border);
+        combo.setColour(juce::ComboBox::buttonColourId, ide::panel);
+        combo.setColour(juce::ComboBox::arrowColourId, ide::textSecondary);
+        combo.setColour(juce::ComboBox::focusedOutlineColourId, ide::constant);
+    };
+
+    configureCombo(inputDeviceCombo);
+    configureCombo(outputDeviceCombo);
+    configureCombo(sampleRateCombo);
+    configureCombo(blockSizeCombo);
+
+    for (auto& combo : inputRoutingCombos)
+        configureCombo(combo);
+
+    for (auto& combo : outputRoutingCombos)
+        configureCombo(combo);
 
     codeEditor.setTabSize(4, true);
     codeEditor.setScrollbarThickness(12);
@@ -334,9 +380,12 @@ MainComponent::MainComponent()
     for (auto* component : std::initializer_list<juce::Component*>
          {
              &controlsViewport, &workspaceResizerBar, navigatorResizeBar.get(), &leftPanelToggleStrip, &navigatorToggleStrip,
-             &sourceHeader, &transportHeader, &wavHeader, &dspHeader, &builtinHeader, &userHeader, &toolsHeader, &editorHeader, &navigatorHeader,
+             &sourceHeader, &transportHeader, &deviceHeader, &wavHeader, &dspHeader, &builtinHeader, &userHeader, &toolsHeader, &editorHeader, &navigatorHeader,
              &logHeader, &projectPathLabel, &codeFontSizeLabel, &codeFontSizeValueLabel, &sourceCombo, &startButton, &stopButton,
-             &gainLabel, &gainSlider, &frequencyLabel, &frequencySlider, &sampleRateLabel, &blockSizeLabel, &loadWavButton,
+             &gainLabel, &gainSlider, &frequencyLabel, &frequencySlider, &inputDeviceLabel, &outputDeviceLabel, &sampleRateLabel, &blockSizeLabel,
+             &inputChannelsLabel, &outputChannelsLabel, &inputRoutingLabel, &outputRoutingLabel, &inputDeviceCombo, &outputDeviceCombo,
+             &sampleRateCombo, &blockSizeCombo, &preferredAudioStatusLabel, &requestedAudioStatusLabel, &actualAudioStatusLabel, &overrideAudioStatusLabel,
+             &warningAudioStatusLabel, &loadWavButton,
              &wavFileLabel, &wavLoopToggle, &wavPositionLabel, &wavPositionSlider, &processingModeCombo, &builtinProcessorCombo,
              &savePresetButton, &loadPresetButton, &newProjectButton, &openProjectButton, &saveProjectButton, &saveProjectAsButton,
              &compileButton, &showOscilloscopeButton, &showControlsButton, &toggleLeftPanelButton, &toggleNavigatorButton,
@@ -344,9 +393,14 @@ MainComponent::MainComponent()
          })
     {
         if (component == &sourceHeader || component == &transportHeader || component == &wavHeader || component == &dspHeader
-            || component == &builtinHeader || component == &userHeader || component == &toolsHeader || component == &sourceCombo
+            || component == &deviceHeader || component == &builtinHeader || component == &userHeader || component == &toolsHeader || component == &sourceCombo
             || component == &startButton || component == &stopButton || component == &gainLabel || component == &gainSlider
-            || component == &frequencyLabel || component == &frequencySlider || component == &sampleRateLabel || component == &blockSizeLabel
+            || component == &frequencyLabel || component == &frequencySlider || component == &inputDeviceLabel || component == &outputDeviceLabel
+            || component == &sampleRateLabel || component == &blockSizeLabel || component == &inputChannelsLabel || component == &outputChannelsLabel
+            || component == &inputRoutingLabel || component == &outputRoutingLabel || component == &inputDeviceCombo || component == &outputDeviceCombo
+            || component == &sampleRateCombo || component == &blockSizeCombo || component == &preferredAudioStatusLabel
+            || component == &requestedAudioStatusLabel || component == &actualAudioStatusLabel || component == &overrideAudioStatusLabel
+            || component == &warningAudioStatusLabel
             || component == &loadWavButton || component == &wavFileLabel || component == &wavLoopToggle || component == &wavPositionLabel
             || component == &wavPositionSlider || component == &processingModeCombo || component == &builtinProcessorCombo
             || component == &savePresetButton || component == &loadPresetButton || component == &showOscilloscopeButton
@@ -369,12 +423,20 @@ MainComponent::MainComponent()
     for (auto& slider : builtinParameterSliders)
         controlsContent.addAndMakeVisible(slider);
 
+    for (auto& combo : inputRoutingCombos)
+        controlsContent.addAndMakeVisible(combo);
+
+    for (auto& combo : outputRoutingCombos)
+        controlsContent.addAndMakeVisible(combo);
+
     audioEngine.setSourceGain(0.2f);
     audioEngine.setSineFrequency(440.0f);
     audioEngine.setBuiltinProcessorType(BuiltinProcessorType::bypass);
 
     if (const auto initResult = audioEngine.initialise(); initResult.failed())
         showErrorMessage("Audio Initialisation Failed", initResult.getErrorMessage());
+    else
+        applyCurrentProjectAudioState();
 
     refreshBuiltinControls();
     refreshUserControls();
@@ -484,6 +546,86 @@ void MainComponent::resized()
         startButton.setBounds(transportRow.removeFromLeft(transportRow.getWidth() / 2).reduced(2, 0));
         stopButton.setBounds(transportRow.reduced(2, 0));
 
+        deviceHeader.setBounds(placeRow(24));
+        inputDeviceLabel.setBounds(placeRow(18));
+        inputDeviceCombo.setBounds(placeRow(28));
+        outputDeviceLabel.setBounds(placeRow(18));
+        outputDeviceCombo.setBounds(placeRow(28));
+
+        auto rateRow = placeRow(46);
+        auto sampleRateArea = rateRow.removeFromLeft(rateRow.getWidth() / 2).reduced(2, 0);
+        auto blockSizeArea = rateRow.reduced(2, 0);
+        sampleRateLabel.setBounds(sampleRateArea.removeFromTop(18));
+        sampleRateCombo.setBounds(sampleRateArea.removeFromTop(28));
+        blockSizeLabel.setBounds(blockSizeArea.removeFromTop(18));
+        blockSizeCombo.setBounds(blockSizeArea.removeFromTop(28));
+
+        preferredAudioStatusLabel.setBounds(placeRow(40));
+        requestedAudioStatusLabel.setBounds(placeRow(40));
+        actualAudioStatusLabel.setBounds(placeRow(40));
+        overrideAudioStatusLabel.setBounds(placeRow(40));
+        warningAudioStatusLabel.setBounds(placeRow(52));
+
+        inputChannelsLabel.setBounds(placeRow(18));
+        if (inputChannelButtons.isEmpty())
+        {
+            y += 4;
+        }
+        else
+        {
+            auto buttonRow = juce::Rectangle<int>(x, y, contentWidth, 24);
+            const auto buttonWidth = juce::jmax(96, (contentWidth - 4) / juce::jmax(inputChannelButtons.size(), 1));
+
+            for (int index = 0; index < inputChannelButtons.size(); ++index)
+            {
+                auto* button = inputChannelButtons[index];
+                button->setBounds(buttonRow.removeFromLeft(buttonWidth).reduced(2, 0));
+            }
+
+            y += 30;
+        }
+
+        outputChannelsLabel.setBounds(placeRow(18));
+        if (outputChannelButtons.isEmpty())
+        {
+            y += 4;
+        }
+        else
+        {
+            auto buttonRow = juce::Rectangle<int>(x, y, contentWidth, 24);
+            const auto buttonWidth = juce::jmax(96, (contentWidth - 4) / juce::jmax(outputChannelButtons.size(), 1));
+
+            for (int index = 0; index < outputChannelButtons.size(); ++index)
+            {
+                auto* button = outputChannelButtons[index];
+                button->setBounds(buttonRow.removeFromLeft(buttonWidth).reduced(2, 0));
+            }
+
+            y += 30;
+        }
+
+        inputRoutingLabel.setBounds(placeRow(18));
+        for (int index = 0; index < DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS; ++index)
+        {
+            auto& combo = inputRoutingCombos[static_cast<std::size_t>(index)];
+
+            if (combo.isVisible())
+                combo.setBounds(placeRow(28));
+            else
+                combo.setBounds({});
+        }
+
+        outputRoutingLabel.setBounds(placeRow(18));
+        for (int index = 0; index < DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS; ++index)
+        {
+            auto& combo = outputRoutingCombos[static_cast<std::size_t>(index)];
+
+            if (combo.isVisible())
+                combo.setBounds(placeRow(28));
+            else
+                combo.setBounds({});
+        }
+
         toolsHeader.setBounds(placeRow(24));
         auto toolsRow = placeRow(30);
         showOscilloscopeButton.setBounds(toolsRow.removeFromLeft(toolsRow.getWidth() / 2).reduced(2, 0));
@@ -493,8 +635,6 @@ void MainComponent::resized()
         gainSlider.setBounds(placeRow(28));
         frequencyLabel.setBounds(placeRow(18));
         frequencySlider.setBounds(placeRow(28));
-        sampleRateLabel.setBounds(placeRow(18));
-        blockSizeLabel.setBounds(placeRow(18));
 
         wavHeader.setBounds(placeRow(24));
         loadWavButton.setBounds(placeRow(28));
@@ -530,9 +670,13 @@ void MainComponent::resized()
              {
                  &sourceHeader, &sourceCombo, &transportHeader, &startButton, &stopButton, &toolsHeader,
                  &showOscilloscopeButton, &showControlsButton, &gainLabel, &gainSlider, &frequencyLabel, &frequencySlider,
-                 &sampleRateLabel, &blockSizeLabel, &wavHeader, &loadWavButton, &wavFileLabel, &wavLoopToggle,
-                 &wavPositionLabel, &wavPositionSlider, &dspHeader, &processingModeCombo, &builtinHeader,
-                 &builtinProcessorCombo, &savePresetButton, &loadPresetButton, &userHeader, &userModuleStatusLabel
+                 &deviceHeader, &inputDeviceLabel, &inputDeviceCombo, &outputDeviceLabel, &outputDeviceCombo,
+                 &sampleRateLabel, &sampleRateCombo, &blockSizeLabel, &blockSizeCombo, &inputChannelsLabel, &outputChannelsLabel,
+                 &inputRoutingLabel, &outputRoutingLabel, &preferredAudioStatusLabel, &requestedAudioStatusLabel,
+                 &actualAudioStatusLabel, &overrideAudioStatusLabel, &warningAudioStatusLabel, &wavHeader,
+                 &loadWavButton, &wavFileLabel, &wavLoopToggle, &wavPositionLabel, &wavPositionSlider, &dspHeader,
+                 &processingModeCombo, &builtinHeader, &builtinProcessorCombo, &savePresetButton, &loadPresetButton,
+                 &userHeader, &userModuleStatusLabel
              })
         {
             component->setBounds({});
@@ -543,6 +687,18 @@ void MainComponent::resized()
 
         for (auto& slider : builtinParameterSliders)
             slider.setBounds({});
+
+        for (auto& combo : inputRoutingCombos)
+            combo.setBounds({});
+
+        for (auto& combo : outputRoutingCombos)
+            combo.setBounds({});
+
+        for (auto* button : inputChannelButtons)
+            button->setBounds({});
+
+        for (auto* button : outputChannelButtons)
+            button->setBounds({});
 
         controlsContent.setSize(juce::jmax(leftPanelWidth, 1), juce::jmax(leftPanelHeight, 1));
     }
@@ -724,6 +880,18 @@ void MainComponent::timerCallback()
 {
     updatePanelAnimation();
     audioEngine.getUserDspHost().reclaimRetiredRuntimes();
+
+    const auto userSnapshot = audioEngine.getUserDspHost().getSnapshot();
+
+    if (userSnapshot.hasActiveModule && userSnapshot.moduleGeneration != lastSeenUserModuleGeneration)
+    {
+        lastSeenUserModuleGeneration = userSnapshot.moduleGeneration;
+        updateProjectAudioState([preferred = userSnapshot.preferredAudioConfiguration] (ProjectAudioState& state)
+        {
+            state.cachedPreferred = preferred;
+        });
+    }
+
     refreshEngineState();
     refreshBuiltinControls();
     refreshUserControls();
@@ -989,6 +1157,107 @@ void MainComponent::configureButtonsAndCallbacks()
         refreshBuiltinControls();
     };
 
+    inputDeviceCombo.onChange = [this]
+    {
+        if (updatingUi)
+            return;
+
+        const auto selectedIndex = inputDeviceCombo.getSelectedItemIndex();
+
+        if (! juce::isPositiveAndBelow(selectedIndex, inputDeviceCombo.getNumItems()))
+            return;
+
+        updateProjectAudioState([this, selectedIndex] (ProjectAudioState& state)
+        {
+            state.deviceSelection.inputDeviceName = inputDeviceCombo.getItemText(selectedIndex);
+            state.overrides.inputDeviceOverridden = true;
+        });
+    };
+
+    outputDeviceCombo.onChange = [this]
+    {
+        if (updatingUi)
+            return;
+
+        const auto selectedIndex = outputDeviceCombo.getSelectedItemIndex();
+
+        if (! juce::isPositiveAndBelow(selectedIndex, outputDeviceCombo.getNumItems()))
+            return;
+
+        updateProjectAudioState([this, selectedIndex] (ProjectAudioState& state)
+        {
+            state.deviceSelection.outputDeviceName = outputDeviceCombo.getItemText(selectedIndex);
+            state.overrides.outputDeviceOverridden = true;
+        });
+    };
+
+    sampleRateCombo.onChange = [this]
+    {
+        if (updatingUi)
+            return;
+
+        const auto selectedRate = static_cast<double>(sampleRateCombo.getSelectedId());
+
+        if (selectedRate <= 0.0)
+            return;
+
+        updateProjectAudioState([selectedRate] (ProjectAudioState& state)
+        {
+            state.overrides.sampleRateOverridden = true;
+            state.overrides.sampleRate = selectedRate;
+        });
+    };
+
+    blockSizeCombo.onChange = [this]
+    {
+        if (updatingUi)
+            return;
+
+        const auto selectedBlockSize = blockSizeCombo.getSelectedId();
+
+        if (selectedBlockSize <= 0)
+            return;
+
+        updateProjectAudioState([selectedBlockSize] (ProjectAudioState& state)
+        {
+            state.overrides.blockSizeOverridden = true;
+            state.overrides.blockSize = selectedBlockSize;
+        });
+    };
+
+    for (int index = 0; index < DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS; ++index)
+    {
+        inputRoutingCombos[static_cast<std::size_t>(index)].onChange = [this, index]
+        {
+            if (updatingUi)
+                return;
+
+            const auto selectedId = inputRoutingCombos[static_cast<std::size_t>(index)].getSelectedId();
+            const auto physicalChannelIndex = selectedId > 0 && selectedId < 1000 ? selectedId - 1 : -1;
+
+            updateProjectAudioState([index, physicalChannelIndex] (ProjectAudioState& state)
+            {
+                state.deviceSelection.inputRouting[static_cast<std::size_t>(index)] = physicalChannelIndex;
+                state.overrides.routingOverridden = true;
+            });
+        };
+
+        outputRoutingCombos[static_cast<std::size_t>(index)].onChange = [this, index]
+        {
+            if (updatingUi)
+                return;
+
+            const auto selectedId = outputRoutingCombos[static_cast<std::size_t>(index)].getSelectedId();
+            const auto physicalChannelIndex = selectedId > 0 && selectedId < 1000 ? selectedId - 1 : -1;
+
+            updateProjectAudioState([index, physicalChannelIndex] (ProjectAudioState& state)
+            {
+                state.deviceSelection.outputRouting[static_cast<std::size_t>(index)] = physicalChannelIndex;
+                state.overrides.routingOverridden = true;
+            });
+        };
+    }
+
     for (int index = 0; index < static_cast<int>(builtinParameterSliders.size()); ++index)
     {
         builtinParameterSliders[static_cast<std::size_t>(index)].onValueChange = [this, index]
@@ -1055,8 +1324,6 @@ void MainComponent::refreshEngineState()
     frequencySlider.setValue(snapshot.sineFrequency, juce::dontSendNotification);
     wavFileLabel.setText(snapshot.wavLoaded ? snapshot.wavFileName : "No WAV loaded", juce::dontSendNotification);
     wavLoopToggle.setToggleState(snapshot.wavLooping, juce::dontSendNotification);
-    sampleRateLabel.setText("Sample Rate: " + juce::String(snapshot.sampleRate, 1) + " Hz", juce::dontSendNotification);
-    blockSizeLabel.setText("Block Size: " + juce::String(snapshot.blockSize), juce::dontSendNotification);
 
     if (! wavPositionSlider.isMouseButtonDown())
         wavPositionSlider.setValue(snapshot.wavPosition, juce::dontSendNotification);
@@ -1068,6 +1335,222 @@ void MainComponent::refreshEngineState()
     startButton.setEnabled(! snapshot.transportRunning);
 
     updatingUi = false;
+    refreshAudioDeviceControls();
+}
+
+void MainComponent::refreshAudioDeviceControls()
+{
+    const auto snapshot = audioEngine.getSnapshot();
+    const auto buttonLayoutChanged = rebuildAudioChannelButtons(snapshot);
+    bool comboVisibilityChanged = false;
+    updatingUi = true;
+
+    auto repopulateDeviceCombo = [] (juce::ComboBox& combo,
+                                     const juce::StringArray& names,
+                                     const juce::String& selectedName,
+                                     const juce::String& placeholder)
+    {
+        combo.clear(juce::dontSendNotification);
+
+        for (int index = 0; index < names.size(); ++index)
+            combo.addItem(names[index], index + 1);
+
+        combo.setTextWhenNothingSelected(placeholder);
+
+        if (selectedName.isNotEmpty())
+        {
+            const auto selectedIndex = names.indexOf(selectedName);
+
+            if (selectedIndex >= 0)
+                combo.setSelectedId(selectedIndex + 1, juce::dontSendNotification);
+            else
+                combo.setText(selectedName, juce::dontSendNotification);
+        }
+    };
+
+    repopulateDeviceCombo(inputDeviceCombo, snapshot.availableInputDevices, snapshot.inputDeviceName, "No input device");
+    repopulateDeviceCombo(outputDeviceCombo, snapshot.availableOutputDevices, snapshot.outputDeviceName, "No output device");
+
+    sampleRateCombo.clear(juce::dontSendNotification);
+    for (const auto rate : snapshot.availableSampleRates)
+        sampleRateCombo.addItem(juce::String(rate, 1) + " Hz", juce::roundToInt(rate));
+
+    const auto requestedRateId = juce::roundToInt(snapshot.requestedSampleRate);
+    if (requestedRateId > 0 && sampleRateCombo.indexOfItemId(requestedRateId) < 0)
+        sampleRateCombo.addItem(juce::String(snapshot.requestedSampleRate, 1) + " Hz (requested)", requestedRateId);
+    sampleRateCombo.setSelectedId(requestedRateId, juce::dontSendNotification);
+    sampleRateCombo.setEnabled(sampleRateCombo.getNumItems() > 0);
+
+    blockSizeCombo.clear(juce::dontSendNotification);
+    for (const auto blockSize : snapshot.availableBlockSizes)
+        blockSizeCombo.addItem(juce::String(blockSize), blockSize);
+
+    if (snapshot.requestedBlockSize > 0 && blockSizeCombo.indexOfItemId(snapshot.requestedBlockSize) < 0)
+        blockSizeCombo.addItem(juce::String(snapshot.requestedBlockSize) + " (requested)", snapshot.requestedBlockSize);
+    blockSizeCombo.setSelectedId(snapshot.requestedBlockSize, juce::dontSendNotification);
+    blockSizeCombo.setEnabled(blockSizeCombo.getNumItems() > 0);
+
+    auto updateChannelButtonStates = [] (juce::OwnedArray<juce::ToggleButton>& buttons,
+                                         const std::vector<int>& enabledChannels)
+    {
+        for (int index = 0; index < buttons.size(); ++index)
+        {
+            const auto isEnabled = std::find(enabledChannels.begin(), enabledChannels.end(), index) != enabledChannels.end();
+            buttons[index]->setToggleState(isEnabled, juce::dontSendNotification);
+        }
+    };
+
+    updateChannelButtonStates(inputChannelButtons, snapshot.enabledInputChannels);
+    updateChannelButtonStates(outputChannelButtons, snapshot.enabledOutputChannels);
+
+    inputChannelsLabel.setVisible(! inputChannelButtons.isEmpty());
+    outputChannelsLabel.setVisible(! outputChannelButtons.isEmpty());
+    inputRoutingLabel.setVisible(snapshot.requestedInputChannels > 0);
+    outputRoutingLabel.setVisible(snapshot.requestedOutputChannels > 0);
+
+    for (int index = 0; index < DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS; ++index)
+    {
+        auto& inputCombo = inputRoutingCombos[static_cast<std::size_t>(index)];
+        inputCombo.clear(juce::dontSendNotification);
+        comboVisibilityChanged = comboVisibilityChanged || (inputCombo.isVisible() != (index < snapshot.requestedInputChannels));
+        inputCombo.setVisible(index < snapshot.requestedInputChannels);
+        inputCombo.setTextWhenNothingSelected("DSP In " + juce::String(index + 1) + " <- none");
+
+        const auto inputNoneId = 1000 + index + 1;
+        inputCombo.addItem("DSP In " + juce::String(index + 1) + " <- none", inputNoneId);
+
+        for (const auto physicalIndex : snapshot.enabledInputChannels)
+        {
+            const auto name = juce::isPositiveAndBelow(physicalIndex, snapshot.inputChannelNames.size())
+                            ? snapshot.inputChannelNames[physicalIndex]
+                            : ("Input " + juce::String(physicalIndex + 1));
+            inputCombo.addItem("DSP In " + juce::String(index + 1) + " <- " + name, physicalIndex + 1);
+        }
+
+        const auto inputSelection = snapshot.inputRouting[static_cast<std::size_t>(index)];
+        inputCombo.setSelectedId(inputSelection >= 0 ? inputSelection + 1 : inputNoneId, juce::dontSendNotification);
+        inputCombo.setEnabled(index < snapshot.requestedInputChannels && inputCombo.getNumItems() > 0);
+
+        auto& outputCombo = outputRoutingCombos[static_cast<std::size_t>(index)];
+        outputCombo.clear(juce::dontSendNotification);
+        comboVisibilityChanged = comboVisibilityChanged || (outputCombo.isVisible() != (index < snapshot.requestedOutputChannels));
+        outputCombo.setVisible(index < snapshot.requestedOutputChannels);
+        outputCombo.setTextWhenNothingSelected("DSP Out " + juce::String(index + 1) + " -> none");
+
+        const auto outputNoneId = 2000 + index + 1;
+        outputCombo.addItem("DSP Out " + juce::String(index + 1) + " -> none", outputNoneId);
+
+        for (const auto physicalIndex : snapshot.enabledOutputChannels)
+        {
+            const auto name = juce::isPositiveAndBelow(physicalIndex, snapshot.outputChannelNames.size())
+                            ? snapshot.outputChannelNames[physicalIndex]
+                            : ("Output " + juce::String(physicalIndex + 1));
+            outputCombo.addItem("DSP Out " + juce::String(index + 1) + " -> " + name, physicalIndex + 1);
+        }
+
+        const auto outputSelection = snapshot.outputRouting[static_cast<std::size_t>(index)];
+        outputCombo.setSelectedId(outputSelection >= 0 ? outputSelection + 1 : outputNoneId, juce::dontSendNotification);
+        outputCombo.setEnabled(index < snapshot.requestedOutputChannels && outputCombo.getNumItems() > 0);
+    }
+
+    preferredAudioStatusLabel.setText(snapshot.preferredStatusText, juce::dontSendNotification);
+    requestedAudioStatusLabel.setText(snapshot.requestedStatusText, juce::dontSendNotification);
+    actualAudioStatusLabel.setText(snapshot.actualStatusText, juce::dontSendNotification);
+    overrideAudioStatusLabel.setText(snapshot.overrideStatusText, juce::dontSendNotification);
+    warningAudioStatusLabel.setText(snapshot.warningStatusText, juce::dontSendNotification);
+
+    inputDeviceCombo.setEnabled(inputDeviceCombo.getNumItems() > 0);
+    outputDeviceCombo.setEnabled(outputDeviceCombo.getNumItems() > 0);
+    updatingUi = false;
+
+    if ((buttonLayoutChanged || comboVisibilityChanged) && controlsViewport.getWidth() > 0 && controlsViewport.getHeight() > 0)
+        resized();
+}
+
+bool MainComponent::rebuildAudioChannelButtons(const AudioEngine::Snapshot& snapshot)
+{
+    auto changed = false;
+
+    auto needsRebuild = [] (const juce::OwnedArray<juce::ToggleButton>& buttons,
+                            const juce::StringArray& channelNames,
+                            const juce::String& prefix)
+    {
+        if (buttons.size() != channelNames.size())
+            return true;
+
+        for (int index = 0; index < buttons.size(); ++index)
+        {
+            const auto expectedText = prefix + " " + juce::String(index + 1)
+                                    + (channelNames[index].isNotEmpty() ? ": " + channelNames[index] : juce::String());
+
+            if (buttons[index]->getButtonText() != expectedText)
+                return true;
+        }
+
+        return false;
+    };
+
+    auto rebuildButtons = [this] (juce::OwnedArray<juce::ToggleButton>& buttons,
+                                  const juce::StringArray& channelNames,
+                                  const juce::String& prefix,
+                                  bool isInput)
+    {
+        buttons.clear(true);
+
+        for (int index = 0; index < channelNames.size(); ++index)
+        {
+            auto* button = buttons.add(new juce::ToggleButton(prefix + " " + juce::String(index + 1)
+                                                              + (channelNames[index].isNotEmpty() ? ": " + channelNames[index] : juce::String())));
+            configureChannelToggleButton(*button);
+            controlsContent.addAndMakeVisible(button);
+
+            button->onClick = [this, isInput]
+            {
+                if (updatingUi)
+                    return;
+
+                const auto buildEnabledChannels = [] (const juce::OwnedArray<juce::ToggleButton>& buttonArray)
+                {
+                    std::vector<int> result;
+                    result.reserve(static_cast<std::size_t>(buttonArray.size()));
+
+                    for (int buttonIndex = 0; buttonIndex < buttonArray.size(); ++buttonIndex)
+                        if (buttonArray[buttonIndex]->getToggleState())
+                            result.push_back(buttonIndex);
+
+                    return result;
+                };
+
+                updateProjectAudioState([this, isInput, buildEnabledChannels] (ProjectAudioState& state)
+                {
+                    if (isInput)
+                    {
+                        state.deviceSelection.enabledInputChannels = buildEnabledChannels(inputChannelButtons);
+                        state.overrides.inputChannelsOverridden = true;
+                    }
+                    else
+                    {
+                        state.deviceSelection.enabledOutputChannels = buildEnabledChannels(outputChannelButtons);
+                        state.overrides.outputChannelsOverridden = true;
+                    }
+                });
+            };
+        }
+    };
+
+    if (needsRebuild(inputChannelButtons, snapshot.inputChannelNames, "Input"))
+    {
+        rebuildButtons(inputChannelButtons, snapshot.inputChannelNames, "Input", true);
+        changed = true;
+    }
+
+    if (needsRebuild(outputChannelButtons, snapshot.outputChannelNames, "Output"))
+    {
+        rebuildButtons(outputChannelButtons, snapshot.outputChannelNames, "Output", false);
+        changed = true;
+    }
+
+    return changed;
 }
 
 void MainComponent::refreshBuiltinControls()
@@ -1210,6 +1693,33 @@ void MainComponent::refreshProjectState()
         refreshProjectNavigator();
         projectNavigatorNeedsRefresh = false;
     }
+}
+
+void MainComponent::applyCurrentProjectAudioState()
+{
+    if (const auto result = audioEngine.applyProjectAudioState(projectManager.getAudioState()); result.failed())
+    {
+        showErrorMessage("Audio Device Configuration Failed", result.getErrorMessage());
+        return;
+    }
+
+    projectManager.setAudioState(audioEngine.getProjectAudioState(), false);
+    refreshAudioDeviceControls();
+}
+
+void MainComponent::updateProjectAudioState(const std::function<void(ProjectAudioState&)>& mutator)
+{
+    auto nextState = projectManager.getAudioState();
+    mutator(nextState);
+
+    if (const auto result = audioEngine.applyProjectAudioState(nextState); result.failed())
+    {
+        showErrorMessage("Audio Device Configuration Failed", result.getErrorMessage());
+        return;
+    }
+
+    projectManager.setAudioState(audioEngine.getProjectAudioState(), true);
+    refreshAudioDeviceControls();
 }
 
 void MainComponent::refreshProjectNavigator()
@@ -1483,6 +1993,7 @@ void MainComponent::promptForNewProject()
                                  safeThis->projectManager.createNewProject();
                                  safeThis->navigatorSelectionPath = safeThis->projectManager.getActiveFilePath();
                                  safeThis->projectNavigatorNeedsRefresh = true;
+                                 safeThis->applyCurrentProjectAudioState();
                                  safeThis->refreshProjectState();
                              });
 }
@@ -1517,6 +2028,7 @@ void MainComponent::promptForOpenProject()
 
                                                                           safeThis->navigatorSelectionPath = safeThis->projectManager.getActiveFilePath();
                                                                           safeThis->projectNavigatorNeedsRefresh = true;
+                                                                          safeThis->applyCurrentProjectAudioState();
                                                                           safeThis->refreshProjectState();
                                                                       });
                              });

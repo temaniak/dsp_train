@@ -8,10 +8,11 @@
     #define DSP_EDU_EXPORT extern "C"
 #endif
 
-static constexpr std::uint32_t DSP_EDU_USER_DSP_API_VERSION = 2u;
+static constexpr std::uint32_t DSP_EDU_USER_DSP_API_VERSION = 3u;
 static constexpr int DSP_EDU_USER_DSP_MAX_CONTROLS = 32;
 static constexpr int DSP_EDU_USER_DSP_MAX_PARAMETERS = DSP_EDU_USER_DSP_MAX_CONTROLS;
 static constexpr int DSP_EDU_USER_DSP_TEXT_CAPACITY = 32;
+static constexpr int DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS = 2;
 
 struct DspEduParameterInfo
 {
@@ -20,6 +21,24 @@ struct DspEduParameterInfo
     float minValue = 0.0f;
     float maxValue = 1.0f;
     float defaultValue = 0.0f;
+};
+
+struct DspEduPreferredAudioConfig
+{
+    std::uint32_t structSize = sizeof(DspEduPreferredAudioConfig);
+    double preferredSampleRate = 0.0;
+    int preferredBlockSize = 0;
+    int preferredInputChannels = 0;
+    int preferredOutputChannels = 0;
+};
+
+struct DspEduProcessSpec
+{
+    std::uint32_t structSize = sizeof(DspEduProcessSpec);
+    double sampleRate = 44100.0;
+    int maximumBlockSize = 512;
+    int activeInputChannels = 0;
+    int activeOutputChannels = 0;
 };
 
 using DspEduInstanceHandle = void*;
@@ -32,11 +51,17 @@ struct DspEduApi
     DspEduInstanceHandle (*create)() noexcept = nullptr;
     void (*destroy)(DspEduInstanceHandle) noexcept = nullptr;
     const char* (*getProcessorName)(DspEduInstanceHandle) noexcept = nullptr;
+    int (*getPreferredAudioConfig)(DspEduInstanceHandle, DspEduPreferredAudioConfig*) noexcept = nullptr;
     int (*getParameterCount)(DspEduInstanceHandle) noexcept = nullptr;
     int (*getParameterInfo)(DspEduInstanceHandle, int, DspEduParameterInfo*) noexcept = nullptr;
-    void (*prepare)(DspEduInstanceHandle, double sampleRate, int maxBlockSize) noexcept = nullptr;
+    void (*prepare)(DspEduInstanceHandle, const DspEduProcessSpec*) noexcept = nullptr;
     void (*reset)(DspEduInstanceHandle) noexcept = nullptr;
-    void (*process)(DspEduInstanceHandle, const float* input, float* output, int numSamples) noexcept = nullptr;
+    void (*process)(DspEduInstanceHandle,
+                    const float* const* inputs,
+                    float* const* outputs,
+                    int numInputChannels,
+                    int numOutputChannels,
+                    int numSamples) noexcept = nullptr;
     void (*setParameter)(DspEduInstanceHandle, int parameterIndex, float value) noexcept = nullptr;
     void (*setControlValue)(DspEduInstanceHandle, int controlIndex, float value) noexcept = nullptr;
 };
@@ -46,6 +71,7 @@ DSP_EDU_EXPORT const DspEduApi* dspedu_get_api() noexcept;
 #ifdef __cplusplus
 
 #include <algorithm>
+#include <array>
 #include <concepts>
 #include <cstring>
 #include <new>
@@ -74,19 +100,56 @@ inline void copyText(char* destination, const char* source) noexcept
 
 namespace detail
 {
-inline void copyInputToOutput(const float* input, float* output, int numSamples) noexcept
+inline int clampAudioChannelCount(int channelCount) noexcept
 {
-    if (output == nullptr || numSamples <= 0)
+    return std::clamp(channelCount, 0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS);
+}
+
+inline void clearOutputs(float* const* outputs, int numOutputChannels, int numSamples) noexcept
+{
+    if (outputs == nullptr || numSamples <= 0)
         return;
 
-    if (input != nullptr && input != output)
+    for (int channel = 0; channel < numOutputChannels; ++channel)
     {
-        std::copy_n(input, static_cast<std::size_t>(numSamples), output);
-        return;
+        if (auto* output = outputs[channel]; output != nullptr)
+            std::fill_n(output, static_cast<std::size_t>(numSamples), 0.0f);
     }
+}
 
-    if (input == nullptr)
-        std::fill_n(output, static_cast<std::size_t>(numSamples), 0.0f);
+inline void copyInputToOutput(const float* const* inputs,
+                              float* const* outputs,
+                              int numInputChannels,
+                              int numOutputChannels,
+                              int numSamples) noexcept
+{
+    if (outputs == nullptr || numSamples <= 0)
+        return;
+
+    for (int channel = 0; channel < numOutputChannels; ++channel)
+    {
+        auto* output = outputs[channel];
+
+        if (output == nullptr)
+            continue;
+
+        if (inputs == nullptr || numInputChannels <= 0)
+        {
+            std::fill_n(output, static_cast<std::size_t>(numSamples), 0.0f);
+            continue;
+        }
+
+        const auto sourceChannel = std::clamp(channel, 0, numInputChannels - 1);
+        const auto* input = inputs[sourceChannel];
+
+        if (input == nullptr)
+        {
+            std::fill_n(output, static_cast<std::size_t>(numSamples), 0.0f);
+            continue;
+        }
+
+        std::copy_n(input, static_cast<std::size_t>(numSamples), output);
+    }
 }
 
 template <typename ProcessorType>
@@ -99,6 +162,50 @@ const char* getProcessorName(ProcessorType& processor) noexcept
     else
     {
         return "User DSP";
+    }
+}
+
+template <typename ProcessorType>
+bool getPreferredAudioConfig(ProcessorType& processor, DspEduPreferredAudioConfig& config) noexcept
+{
+    if constexpr (requires { { processor.getPreferredAudioConfig(config) } -> std::convertible_to<bool>; })
+    {
+        return processor.getPreferredAudioConfig(config);
+    }
+    else if constexpr (requires { processor.getPreferredAudioConfig(config); })
+    {
+        processor.getPreferredAudioConfig(config);
+        return true;
+    }
+    else
+    {
+        bool hasPreferredValue = false;
+
+        if constexpr (requires { { processor.getPreferredSampleRate() } -> std::convertible_to<double>; })
+        {
+            config.preferredSampleRate = processor.getPreferredSampleRate();
+            hasPreferredValue = true;
+        }
+
+        if constexpr (requires { { processor.getPreferredBlockSize() } -> std::convertible_to<int>; })
+        {
+            config.preferredBlockSize = processor.getPreferredBlockSize();
+            hasPreferredValue = true;
+        }
+
+        if constexpr (requires { { processor.getPreferredInputChannels() } -> std::convertible_to<int>; })
+        {
+            config.preferredInputChannels = processor.getPreferredInputChannels();
+            hasPreferredValue = true;
+        }
+
+        if constexpr (requires { { processor.getPreferredOutputChannels() } -> std::convertible_to<int>; })
+        {
+            config.preferredOutputChannels = processor.getPreferredOutputChannels();
+            hasPreferredValue = true;
+        }
+
+        return hasPreferredValue;
     }
 }
 
@@ -122,6 +229,11 @@ bool getParameterInfo(ProcessorType& processor, int parameterIndex, DspEduParame
     {
         return processor.getParameterInfo(parameterIndex, info);
     }
+    else if constexpr (requires { processor.getParameterInfo(parameterIndex, info); })
+    {
+        processor.getParameterInfo(parameterIndex, info);
+        return true;
+    }
     else
     {
         return false;
@@ -129,29 +241,36 @@ bool getParameterInfo(ProcessorType& processor, int parameterIndex, DspEduParame
 }
 
 template <typename ProcessorType>
-void prepare(ProcessorType& processor, double sampleRate, int maxBlockSize)
+void prepare(ProcessorType& processor, const DspEduProcessSpec& spec)
 {
-    if constexpr (requires { processor.prepare(sampleRate, maxBlockSize); })
+    if constexpr (requires { processor.prepare(spec); })
     {
-        processor.prepare(sampleRate, maxBlockSize);
+        processor.prepare(spec);
     }
-    else if constexpr (requires { processor.prepareToPlay(static_cast<float>(sampleRate), maxBlockSize); })
+    else if constexpr (requires { processor.prepare(spec.sampleRate, spec.maximumBlockSize, spec.activeInputChannels, spec.activeOutputChannels); })
     {
-        processor.prepareToPlay(static_cast<float>(sampleRate), maxBlockSize);
+        processor.prepare(spec.sampleRate, spec.maximumBlockSize, spec.activeInputChannels, spec.activeOutputChannels);
     }
-    else if constexpr (requires { processor.prepareToPlay(static_cast<float>(sampleRate)); })
+    else if constexpr (requires { processor.prepare(spec.sampleRate, spec.maximumBlockSize); })
     {
-        processor.prepareToPlay(static_cast<float>(sampleRate));
+        processor.prepare(spec.sampleRate, spec.maximumBlockSize);
     }
-    else if constexpr (requires { processor.init(static_cast<float>(sampleRate)); })
+    else if constexpr (requires { processor.prepareToPlay(spec.sampleRate, spec.maximumBlockSize); })
     {
-        processor.init(static_cast<float>(sampleRate));
+        processor.prepareToPlay(spec.sampleRate, spec.maximumBlockSize);
+    }
+    else if constexpr (requires { processor.prepareToPlay(spec.sampleRate); })
+    {
+        processor.prepareToPlay(spec.sampleRate);
+    }
+    else if constexpr (requires { processor.init(static_cast<float>(spec.sampleRate)); })
+    {
+        processor.init(static_cast<float>(spec.sampleRate));
     }
     else
     {
         static_cast<void>(processor);
-        static_cast<void>(sampleRate);
-        static_cast<void>(maxBlockSize);
+        static_cast<void>(spec);
     }
 }
 
@@ -163,8 +282,42 @@ void reset(ProcessorType& processor)
 }
 
 template <typename ProcessorType>
-void process(ProcessorType& processor, const float* input, float* output, int numSamples)
+void process(ProcessorType& processor,
+             const float* const* inputs,
+             float* const* outputs,
+             int numInputChannels,
+             int numOutputChannels,
+             int numSamples)
 {
+    if constexpr (requires { processor.process(inputs, outputs, numInputChannels, numOutputChannels, numSamples); })
+    {
+        processor.process(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+        return;
+    }
+    else if constexpr (requires { processor.processAudio(inputs, outputs, numInputChannels, numOutputChannels, numSamples); })
+    {
+        processor.processAudio(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+        return;
+    }
+    else if constexpr (requires { processor.process(outputs, numOutputChannels, numSamples); })
+    {
+        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+        processor.process(outputs, numOutputChannels, numSamples);
+        return;
+    }
+    else if constexpr (requires { processor.processAudio(outputs, numOutputChannels, numSamples); })
+    {
+        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+        processor.processAudio(outputs, numOutputChannels, numSamples);
+        return;
+    }
+
+    const auto* input = inputs != nullptr && numInputChannels > 0 ? inputs[0] : nullptr;
+    auto* output = outputs != nullptr && numOutputChannels > 0 ? outputs[0] : nullptr;
+
+    if (output == nullptr)
+        return;
+
     if constexpr (requires { processor.process(input, output, numSamples); })
     {
         processor.process(input, output, numSamples);
@@ -173,14 +326,25 @@ void process(ProcessorType& processor, const float* input, float* output, int nu
     {
         processor.processAudio(input, output, numSamples);
     }
+    else if constexpr (requires { processor.process(output, numSamples); })
+    {
+        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+        processor.process(output, numSamples);
+    }
     else if constexpr (requires { processor.processAudio(output, numSamples); })
     {
-        copyInputToOutput(input, output, numSamples);
+        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
         processor.processAudio(output, numSamples);
     }
     else
     {
-        copyInputToOutput(input, output, numSamples);
+        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+    }
+
+    for (int channel = 1; channel < numOutputChannels; ++channel)
+    {
+        if (outputs[channel] != nullptr)
+            std::copy_n(output, static_cast<std::size_t>(numSamples), outputs[channel]);
     }
 }
 
@@ -244,6 +408,33 @@ struct Adapter
         }
     }
 
+    static int getPreferredAudioConfig(DspEduInstanceHandle handle, DspEduPreferredAudioConfig* config) noexcept
+    {
+        auto* processor = static_cast<ProcessorType*> (handle);
+
+        if (processor == nullptr || config == nullptr)
+            return 0;
+
+        auto localConfig = *config;
+        localConfig.structSize = sizeof(DspEduPreferredAudioConfig);
+
+        try
+        {
+            if (! detail::getPreferredAudioConfig(*processor, localConfig))
+                return 0;
+        }
+        catch (...)
+        {
+            return 0;
+        }
+
+        localConfig.preferredBlockSize = std::max(localConfig.preferredBlockSize, 0);
+        localConfig.preferredInputChannels = detail::clampAudioChannelCount(localConfig.preferredInputChannels);
+        localConfig.preferredOutputChannels = detail::clampAudioChannelCount(localConfig.preferredOutputChannels);
+        *config = localConfig;
+        return 1;
+    }
+
     static int getParameterCount(DspEduInstanceHandle handle) noexcept
     {
         auto* processor = static_cast<ProcessorType*> (handle);
@@ -283,13 +474,23 @@ struct Adapter
         return 1;
     }
 
-    static void prepare(DspEduInstanceHandle handle, double sampleRate, int maxBlockSize) noexcept
+    static void prepare(DspEduInstanceHandle handle, const DspEduProcessSpec* spec) noexcept
     {
-        if (auto* processor = static_cast<ProcessorType*> (handle))
+        if (auto* processor = static_cast<ProcessorType*> (handle); processor != nullptr)
         {
+            DspEduProcessSpec localSpec {};
+
+            if (spec != nullptr)
+                localSpec = *spec;
+
+            localSpec.structSize = sizeof(DspEduProcessSpec);
+            localSpec.maximumBlockSize = std::max(localSpec.maximumBlockSize, 1);
+            localSpec.activeInputChannels = detail::clampAudioChannelCount(localSpec.activeInputChannels);
+            localSpec.activeOutputChannels = detail::clampAudioChannelCount(localSpec.activeOutputChannels);
+
             try
             {
-                detail::prepare(*processor, sampleRate, maxBlockSize);
+                detail::prepare(*processor, localSpec);
             }
             catch (...)
             {
@@ -299,7 +500,7 @@ struct Adapter
 
     static void reset(DspEduInstanceHandle handle) noexcept
     {
-        if (auto* processor = static_cast<ProcessorType*> (handle))
+        if (auto* processor = static_cast<ProcessorType*> (handle); processor != nullptr)
         {
             try
             {
@@ -311,13 +512,24 @@ struct Adapter
         }
     }
 
-    static void process(DspEduInstanceHandle handle, const float* input, float* output, int numSamples) noexcept
+    static void process(DspEduInstanceHandle handle,
+                        const float* const* inputs,
+                        float* const* outputs,
+                        int numInputChannels,
+                        int numOutputChannels,
+                        int numSamples) noexcept
     {
-        if (auto* processor = static_cast<ProcessorType*> (handle))
+        if (numSamples <= 0)
+            return;
+
+        numInputChannels = detail::clampAudioChannelCount(numInputChannels);
+        numOutputChannels = detail::clampAudioChannelCount(numOutputChannels);
+
+        if (auto* processor = static_cast<ProcessorType*> (handle); processor != nullptr)
         {
             try
             {
-                detail::process(*processor, input, output, numSamples);
+                detail::process(*processor, inputs, outputs, numInputChannels, numOutputChannels, numSamples);
                 return;
             }
             catch (...)
@@ -325,12 +537,12 @@ struct Adapter
             }
         }
 
-        detail::copyInputToOutput(input, output, numSamples);
+        detail::copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
     }
 
     static void setParameter(DspEduInstanceHandle handle, int parameterIndex, float value) noexcept
     {
-        if (auto* processor = static_cast<ProcessorType*> (handle))
+        if (auto* processor = static_cast<ProcessorType*> (handle); processor != nullptr)
         {
             try
             {
@@ -344,7 +556,7 @@ struct Adapter
 
     static void setControlValue(DspEduInstanceHandle handle, int controlIndex, float value) noexcept
     {
-        if (auto* processor = static_cast<ProcessorType*> (handle))
+        if (auto* processor = static_cast<ProcessorType*> (handle); processor != nullptr)
         {
             try
             {
@@ -367,6 +579,7 @@ const DspEduApi Adapter<ProcessorType>::api
     &Adapter<ProcessorType>::create,
     &Adapter<ProcessorType>::destroy,
     &Adapter<ProcessorType>::getProcessorName,
+    &Adapter<ProcessorType>::getPreferredAudioConfig,
     &Adapter<ProcessorType>::getParameterCount,
     &Adapter<ProcessorType>::getParameterInfo,
     &Adapter<ProcessorType>::prepare,

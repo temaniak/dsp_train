@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 
+#include "audio/AudioConfiguration.h"
 #include "dsp/BuiltinProcessors.h"
 #include "presets/PresetManager.h"
 #include "userdsp/UserDspProjectManager.h"
@@ -36,7 +37,9 @@ int main()
 
     std::array<float, 4> input { 1.0f, -1.0f, 0.25f, -0.25f };
     std::array<float, 4> output {};
-    processor.process(input.data(), output.data(), static_cast<int>(input.size()));
+    const std::array<const float*, 1> inputPointers { input.data() };
+    const std::array<float*, 1> outputPointers { output.data() };
+    processor.process(inputPointers.data(), outputPointers.data(), 1, 1, static_cast<int>(input.size()));
 
     if (! approximatelyEqual(output[0], 0.5f) || ! approximatelyEqual(output[1], -0.5f))
         return 1;
@@ -120,6 +123,29 @@ int main()
     if (projectManager.moveController(2, 0).failed())
         return 17;
 
+    ProjectAudioState audioState;
+    audioState.cachedPreferred.valid = true;
+    audioState.cachedPreferred.sampleRate = 48000.0;
+    audioState.cachedPreferred.blockSize = 256;
+    audioState.cachedPreferred.preferredInputChannels = 2;
+    audioState.cachedPreferred.preferredOutputChannels = 2;
+    audioState.overrides.sampleRateOverridden = true;
+    audioState.overrides.sampleRate = 44100.0;
+    audioState.overrides.outputChannelsOverridden = true;
+    audioState.deviceSelection.inputDeviceName = "Input Device";
+    audioState.deviceSelection.outputDeviceName = "Output Device";
+    audioState.deviceSelection.enabledInputChannels = { 0, 1 };
+    audioState.deviceSelection.enabledOutputChannels = { 0, 1 };
+    audioState.deviceSelection.inputRouting = { 0, 1 };
+    audioState.deviceSelection.outputRouting = { 1, 0 };
+    audioState.lastKnownActual.inputDeviceName = "Input Device";
+    audioState.lastKnownActual.outputDeviceName = "Output Device";
+    audioState.lastKnownActual.sampleRate = 44100.0;
+    audioState.lastKnownActual.blockSize = 512;
+    audioState.lastKnownActual.activeInputChannels = 1;
+    audioState.lastKnownActual.activeOutputChannels = 2;
+    projectManager.setAudioState(audioState);
+
     const auto projectArchive = juce::File::getSpecialLocation(juce::File::tempDirectory)
                                   .getChildFile("dsp_education_stand_project_test.dspedu");
 
@@ -132,6 +158,7 @@ int main()
         return 19;
 
     const auto& loadedControllers = loadedProjectManager.getControllerDefinitions();
+    const auto& loadedAudioState = loadedProjectManager.getAudioState();
 
     if (loadedProjectManager.getProcessorClassName() != "ExampleUserProcessor"
         || loadedProjectManager.getNodeForPath("include/filters/OnePole.h") == nullptr
@@ -139,7 +166,8 @@ int main()
         || loadedControllers.size() != 3
         || loadedControllers[0] != UserDspControllerDefinition { UserDspControllerType::toggle, "Bypass", "bypassToggle" }
         || loadedControllers[1] != UserDspControllerDefinition { UserDspControllerType::knob, "Drive Amount", "driveAmount" }
-        || loadedControllers[2] != UserDspControllerDefinition { UserDspControllerType::button, "Fire", "fireButton" })
+        || loadedControllers[2] != UserDspControllerDefinition { UserDspControllerType::button, "Fire", "fireButton" }
+        || loadedAudioState != audioState)
     {
         return 20;
     }

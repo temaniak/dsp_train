@@ -2,6 +2,8 @@
 
 #include <JuceHeader.h>
 
+#include "UserDspApi.h"
+
 enum class BuiltinProcessorType
 {
     bypass,
@@ -46,9 +48,13 @@ class IBlockProcessor
 public:
     virtual ~IBlockProcessor() = default;
 
-    virtual void prepare(double sampleRate, int maxBlockSize) = 0;
+    virtual void prepare(double sampleRate, int maxBlockSize, int maxChannels = DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS) = 0;
     virtual void reset() = 0;
-    virtual void process(const float* input, float* output, int numSamples) = 0;
+    virtual void process(const float* const* inputs,
+                         float* const* outputs,
+                         int numInputChannels,
+                         int numOutputChannels,
+                         int numSamples) = 0;
 };
 
 class BuiltinProcessorChain final : public IBlockProcessor
@@ -56,9 +62,13 @@ class BuiltinProcessorChain final : public IBlockProcessor
 public:
     BuiltinProcessorChain();
 
-    void prepare(double sampleRate, int maxBlockSize) override;
+    void prepare(double sampleRate, int maxBlockSize, int maxChannels = DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS) override;
     void reset() override;
-    void process(const float* input, float* output, int numSamples) override;
+    void process(const float* const* inputs,
+                 float* const* outputs,
+                 int numInputChannels,
+                 int numOutputChannels,
+                 int numSamples) override;
 
     void setSelectedProcessor(BuiltinProcessorType type) noexcept;
     BuiltinProcessorType getSelectedProcessor() const noexcept;
@@ -71,16 +81,18 @@ public:
     void applyPresetData(const BuiltinPresetData& preset) noexcept;
 
 private:
-    void processGain(const float* input, float* output, int numSamples) noexcept;
-    void processHardClip(const float* input, float* output, int numSamples) noexcept;
-    void processLowpass(const float* input, float* output, int numSamples) noexcept;
-    void processDelay(const float* input, float* output, int numSamples) noexcept;
+    const float* getInputChannel(const float* const* inputs, int numInputChannels, int channel) const noexcept;
+    void processGain(const float* const* inputs, float* const* outputs, int numInputChannels, int numOutputChannels, int numSamples) noexcept;
+    void processHardClip(const float* const* inputs, float* const* outputs, int numInputChannels, int numOutputChannels, int numSamples) noexcept;
+    void processLowpass(const float* const* inputs, float* const* outputs, int numInputChannels, int numOutputChannels, int numSamples) noexcept;
+    void processDelay(const float* const* inputs, float* const* outputs, int numInputChannels, int numOutputChannels, int numSamples) noexcept;
 
     std::atomic<BuiltinProcessorType> selectedType { BuiltinProcessorType::bypass };
     std::array<std::atomic<float>, 4> parameterValues;
     double currentSampleRate = 44100.0;
     int currentMaxBlockSize = 512;
-    float lowpassState = 0.0f;
-    std::vector<float> delayBuffer;
+    int currentMaxChannels = DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS;
+    std::array<float, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> lowpassState {};
+    juce::AudioBuffer<float> delayBuffer;
     int delayWritePosition = 0;
 };

@@ -14,21 +14,35 @@ public:
         return "Drive Lab Example";
     }
 
-    void prepareToPlay(double newSampleRate)
+    bool getPreferredAudioConfig(DspEduPreferredAudioConfig& config) const
     {
-        sampleRate = std::max(1.0, newSampleRate);
+        config.preferredSampleRate = 48000.0;
+        config.preferredBlockSize = 256;
+        config.preferredInputChannels = 2;
+        config.preferredOutputChannels = 2;
+        return true;
+    }
+
+    void prepare(const DspEduProcessSpec& spec)
+    {
+        sampleRate = std::max(1.0, spec.sampleRate);
         reset();
     }
 
     void reset()
     {
-        toneState = 0.0f;
+        toneState[0] = 0.0f;
+        toneState[1] = 0.0f;
         exciteEnvelope = 0.0f;
     }
 
-    void processAudio(float* buffer, int numSamples)
+    void process(const float* const* inputs,
+                 float* const* outputs,
+                 int numInputChannels,
+                 int numOutputChannels,
+                 int numSamples)
     {
-        if (controls.bypassToggle)
+        if (numOutputChannels <= 0 || outputs == nullptr || outputs[0] == nullptr)
             return;
 
         const auto drive = remap01(controls.driveKnob, 1.0f, 14.0f);
@@ -36,15 +50,38 @@ public:
         const auto mix = controls.mixKnob;
         const auto exciteTarget = controls.exciteButton ? 1.0f : 0.0f;
         const auto alpha = computeLowpassAlpha(toneHz);
+        const auto* inputLeft = numInputChannels > 0 && inputs != nullptr ? inputs[0] : nullptr;
+        const auto* inputRight = numInputChannels > 1 && inputs != nullptr ? inputs[1] : inputLeft;
+        auto* outputLeft = outputs[0];
+        auto* outputRight = numOutputChannels > 1 ? outputs[1] : outputs[0];
 
         for (int sample = 0; sample < numSamples; ++sample)
         {
+            const auto dryLeft = inputLeft != nullptr ? inputLeft[sample] : 0.0f;
+            const auto dryRight = inputRight != nullptr ? inputRight[sample] : dryLeft;
+
+            if (controls.bypassToggle)
+            {
+                outputLeft[sample] = dryLeft;
+
+                if (numOutputChannels > 1 && outputRight != nullptr)
+                    outputRight[sample] = dryRight;
+
+                continue;
+            }
+
             exciteEnvelope += 0.18f * (exciteTarget - exciteEnvelope);
-            const auto dry = buffer[sample];
-            const auto excited = dry + 0.22f * exciteEnvelope;
-            const auto driven = std::tanh(excited * drive);
-            toneState += alpha * (driven - toneState);
-            buffer[sample] = dry + mix * (toneState - dry);
+            const auto excitedLeft = dryLeft + 0.22f * exciteEnvelope;
+            const auto excitedRight = dryRight + 0.22f * exciteEnvelope;
+            const auto drivenLeft = std::tanh(excitedLeft * drive);
+            const auto drivenRight = std::tanh(excitedRight * drive);
+            toneState[0] += alpha * (drivenLeft - toneState[0]);
+            toneState[1] += alpha * (drivenRight - toneState[1]);
+            outputLeft[sample] = dryLeft + mix * (toneState[0] - dryLeft);
+
+            if (numOutputChannels > 1 && outputRight != nullptr)
+                outputRight[sample] = dryRight + mix * (toneState[1] - dryRight);
+
             exciteEnvelope *= 0.995f;
         }
     }
@@ -64,6 +101,6 @@ private:
     }
 
     double sampleRate = 44100.0;
-    float toneState = 0.0f;
+    float toneState[2] { 0.0f, 0.0f };
     float exciteEnvelope = 0.0f;
 };
