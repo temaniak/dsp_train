@@ -6,7 +6,7 @@
 namespace
 {
 constexpr int tileWidth = 172;
-constexpr int tileHeight = 188;
+constexpr int tileHeight = 206;
 constexpr int tileGap = 10;
 
 void configureSectionLabel(juce::Label& label, const juce::String& text)
@@ -144,13 +144,15 @@ std::vector<float> remapPreviewValues(const std::vector<UserDspControllerDefinit
 bool showControllerEditorDialog(UserDspControllerDefinition& definition, juce::LookAndFeel* lookAndFeel)
 {
     juce::AlertWindow window("Edit Controller",
-                             "Set the UI label, code name, and controller type.",
+                             "Set the UI label, code name, controller type, and future MIDI mapping hint.",
                              juce::MessageBoxIconType::NoIcon);
     configureAlertWindowLookAndFeel(window, lookAndFeel);
     window.addTextEditor("label", definition.label, "Label");
     window.addTextEditor("codeName", definition.codeName, "Code Name");
+    window.addTextEditor("midiBindingHint", definition.midiBindingHint, "MIDI Mapping Hint");
     configureAlertTextEditor(window.getTextEditor("label"));
     configureAlertTextEditor(window.getTextEditor("codeName"));
+    configureAlertTextEditor(window.getTextEditor("midiBindingHint"));
 
     window.addComboBox("type", { "Knob", "Button", "Toggle" }, "Type");
 
@@ -168,6 +170,7 @@ bool showControllerEditorDialog(UserDspControllerDefinition& definition, juce::L
 
     definition.label = window.getTextEditor("label")->getText().trim();
     definition.codeName = userdsp::sanitiseControllerCodeName(window.getTextEditor("codeName")->getText());
+    definition.midiBindingHint = window.getTextEditor("midiBindingHint")->getText().trim();
 
     if (definition.codeName.isEmpty())
         definition.codeName = userdsp::sanitiseControllerCodeName(definition.label);
@@ -177,6 +180,12 @@ bool showControllerEditorDialog(UserDspControllerDefinition& definition, juce::L
 
     return true;
 }
+
+enum class ControlsDisplayMode
+{
+    edit,
+    play
+};
 
 bool showDeleteDialog(const juce::String& label, juce::LookAndFeel* lookAndFeel)
 {
@@ -192,19 +201,9 @@ bool showDeleteDialog(const juce::String& label, juce::LookAndFeel* lookAndFeel)
 class ForwardingSlider final : public juce::Slider
 {
 public:
-    std::function<void()> onDoubleClick;
-
     bool isValueEditorActive() const
     {
         return isMouseButtonDown() || hasKeyboardFocus(true);
-    }
-
-    void mouseDoubleClick(const juce::MouseEvent& event) override
-    {
-        if (onDoubleClick != nullptr)
-            onDoubleClick();
-
-        juce::Slider::mouseDoubleClick(event);
     }
 };
 
@@ -212,16 +211,6 @@ class ActionTextButton : public juce::TextButton
 {
 public:
     using juce::TextButton::TextButton;
-
-    std::function<void()> onDoubleClick;
-
-    void mouseDoubleClick(const juce::MouseEvent& event) override
-    {
-        if (onDoubleClick != nullptr)
-            onDoubleClick();
-
-        juce::TextButton::mouseDoubleClick(event);
-    }
 };
 
 class MomentaryTextButton final : public ActionTextButton
@@ -310,14 +299,18 @@ public:
         configureBodyLabel(labelLabel, {}, juce::Justification::centredLeft, 15.0f, true);
         labelLabel.setColour(juce::Label::textColourId, ide::text);
         configureBodyLabel(codeNameLabel, {}, juce::Justification::centredLeft, 12.5f, false);
+        configureBodyLabel(typeLabel, {}, juce::Justification::centredLeft, 12.0f, false);
+        configureBodyLabel(midiLabel, {}, juce::Justification::centredLeft, 12.0f, false);
         configureBodyLabel(runtimeLabel, {}, juce::Justification::centredLeft, 12.0f, false);
 
+        configureTextButton(editButton);
         configureTextButton(moveLeftButton);
         configureTextButton(moveRightButton);
         configureTextButton(deleteButton);
         configureTextButton(momentaryButton);
         configureTextButton(toggleButton);
 
+        editButton.setButtonText("...");
         moveLeftButton.setButtonText("<");
         moveRightButton.setButtonText(">");
         deleteButton.setButtonText("X");
@@ -339,22 +332,11 @@ public:
                 valueChanged(controllerIndex, static_cast<float>(knobSlider.getValue()));
         };
 
-        knobSlider.onDoubleClick = [this]
-        {
-            if (editRequested != nullptr)
-                editRequested(controllerIndex);
-        };
-
         momentaryButton.setButtonText("Hold");
         momentaryButton.onMomentaryValueChanged = [this] (bool isDown)
         {
             if (! suppressValueCallbacks && valueChanged != nullptr)
                 valueChanged(controllerIndex, isDown ? 1.0f : 0.0f);
-        };
-        momentaryButton.onDoubleClick = [this]
-        {
-            if (editRequested != nullptr)
-                editRequested(controllerIndex);
         };
 
         toggleButton.onLatchedValueChanged = [this] (bool isOn)
@@ -362,7 +344,8 @@ public:
             if (! suppressValueCallbacks && valueChanged != nullptr)
                 valueChanged(controllerIndex, isOn ? 1.0f : 0.0f);
         };
-        toggleButton.onDoubleClick = [this]
+
+        editButton.onClick = [this]
         {
             if (editRequested != nullptr)
                 editRequested(controllerIndex);
@@ -387,8 +370,8 @@ public:
         };
 
         for (auto* component : std::initializer_list<juce::Component*>
-             { &labelLabel, &codeNameLabel, &runtimeLabel,
-               &moveLeftButton, &moveRightButton, &deleteButton, &knobSlider, &momentaryButton, &toggleButton })
+             { &labelLabel, &codeNameLabel, &typeLabel, &midiLabel, &runtimeLabel,
+               &editButton, &moveLeftButton, &moveRightButton, &deleteButton, &knobSlider, &momentaryButton, &toggleButton })
         {
             addAndMakeVisible(component);
         }
@@ -397,21 +380,36 @@ public:
     void updateFromState(int index,
                          int totalCount,
                          const UserDspControllerDefinition& controllerDefinition,
+                         ControlsDisplayMode nextMode,
                          bool isRuntimeLinked,
                          float displayValue,
                          bool compileRequired)
     {
         controllerIndex = index;
         definition = controllerDefinition;
+        displayMode = nextMode;
         runtimeLinked = isRuntimeLinked;
         layoutStale = compileRequired;
 
+        const auto isEditMode = displayMode == ControlsDisplayMode::edit;
+
         labelLabel.setText(definition.label, juce::dontSendNotification);
         codeNameLabel.setText("controls." + definition.codeName, juce::dontSendNotification);
+        typeLabel.setText("Type: " + userDspControllerTypeToDisplayName(definition.type), juce::dontSendNotification);
+        midiLabel.setText(definition.midiBindingHint.isNotEmpty() ? ("MIDI: " + definition.midiBindingHint)
+                                                                  : "MIDI: not assigned yet",
+                          juce::dontSendNotification);
         moveLeftButton.setEnabled(index > 0);
         moveRightButton.setEnabled(index + 1 < totalCount);
+        editButton.setVisible(isEditMode);
+        moveLeftButton.setVisible(isEditMode);
+        moveRightButton.setVisible(isEditMode);
+        deleteButton.setVisible(isEditMode);
+        codeNameLabel.setVisible(isEditMode);
+        typeLabel.setVisible(isEditMode);
+        midiLabel.setVisible(isEditMode);
 
-        runtimeLabel.setText(runtimeLinked ? "Linked to DSP" : (layoutStale ? "Preview only, compile" : "Preview only"),
+        runtimeLabel.setText(runtimeLinked ? "Linked to DSP" : (layoutStale ? "Compile to relink" : "Preview only"),
                              juce::dontSendNotification);
         runtimeLabel.setColour(juce::Label::textColourId,
                                runtimeLinked ? ide::success : (layoutStale ? ide::warning : ide::textMuted));
@@ -422,9 +420,9 @@ public:
         momentaryButton.setVisible(definition.type == UserDspControllerType::button);
         toggleButton.setVisible(definition.type == UserDspControllerType::toggle);
 
-        knobSlider.setEnabled(true);
-        momentaryButton.setEnabled(true);
-        toggleButton.setEnabled(true);
+        knobSlider.setEnabled(! isEditMode);
+        momentaryButton.setEnabled(! isEditMode);
+        toggleButton.setEnabled(! isEditMode);
 
         if (definition.type == UserDspControllerType::knob && ! knobSlider.isValueEditorActive())
             knobSlider.setValue(displayValue, juce::dontSendNotification);
@@ -457,30 +455,29 @@ public:
     {
         auto area = getLocalBounds().reduced(9);
         auto headerRow = area.removeFromTop(24);
-        labelLabel.setBounds(headerRow.removeFromLeft(headerRow.getWidth() - 72));
+        labelLabel.setBounds(headerRow.removeFromLeft(headerRow.getWidth() - 96));
 
-        auto actions = headerRow.removeFromRight(72);
+        auto actions = headerRow.removeFromRight(96);
+        editButton.setBounds(actions.removeFromLeft(24).reduced(1, 0));
         moveLeftButton.setBounds(actions.removeFromLeft(22).reduced(1, 0));
         moveRightButton.setBounds(actions.removeFromLeft(22).reduced(1, 0));
         deleteButton.setBounds(actions.reduced(1, 0));
 
         area.removeFromTop(2);
         codeNameLabel.setBounds(area.removeFromTop(18));
+        area.removeFromTop(2);
+        typeLabel.setBounds(area.removeFromTop(18));
+        area.removeFromTop(2);
+        midiLabel.setBounds(area.removeFromTop(18));
         area.removeFromTop(4);
 
-        auto widgetArea = area.removeFromTop(126);
+        auto widgetArea = area.removeFromTop(110);
         knobSlider.setBounds(widgetArea);
         momentaryButton.setBounds(widgetArea.withSizeKeepingCentre(widgetArea.getWidth(), 40).translated(0, 8));
         toggleButton.setBounds(widgetArea.withSizeKeepingCentre(widgetArea.getWidth(), 40).translated(0, 8));
 
         area.removeFromTop(2);
         runtimeLabel.setBounds(area.removeFromTop(18));
-    }
-
-    void mouseDoubleClick(const juce::MouseEvent&) override
-    {
-        if (editRequested != nullptr)
-            editRequested(controllerIndex);
     }
 
 private:
@@ -490,6 +487,7 @@ private:
     std::function<void(int, float)> valueChanged;
 
     int controllerIndex = -1;
+    ControlsDisplayMode displayMode = ControlsDisplayMode::play;
     bool runtimeLinked = false;
     bool layoutStale = false;
     bool suppressValueCallbacks = false;
@@ -497,7 +495,10 @@ private:
 
     juce::Label labelLabel;
     juce::Label codeNameLabel;
+    juce::Label typeLabel;
+    juce::Label midiLabel;
     juce::Label runtimeLabel;
+    ActionTextButton editButton;
     ActionTextButton moveLeftButton;
     ActionTextButton moveRightButton;
     ActionTextButton deleteButton;
@@ -513,31 +514,42 @@ RealtimeControlsComponent::RealtimeControlsComponent(AudioEngine& audioEngineToC
 {
     configureSectionLabel(titleLabel, "Controls");
     configureBodyLabel(statusLabel, {}, juce::Justification::topLeft, 14.0f, false);
-    configureBodyLabel(hintLabel,
-                       "Double-click a tile to rename it, drag values even before compile, "
-                       "and read them in DSP code as controls.<codeName>.",
+    configureBodyLabel(hintLabel, {}, juce::Justification::topLeft, 12.5f, false);
+    configureBodyLabel(modeLabel, "Mode", juce::Justification::centredLeft, 13.0f, true);
+    configureBodyLabel(midiModeHintLabel,
+                       "Edit mode stores labels, code names, and future MIDI mapping hints. "
+                       "Play mode is for using controllers only.",
                        juce::Justification::topLeft,
-                       12.5f,
+                       12.0f,
                        false);
 
     configureTextButton(addKnobButton);
     configureTextButton(addButtonButton);
     configureTextButton(addToggleButton);
+    configureTextButton(editModeButton);
+    configureTextButton(playModeButton);
+
+    editModeButton.setClickingTogglesState(true);
+    playModeButton.setClickingTogglesState(true);
 
     addKnobButton.onClick = [this] { addController(UserDspControllerType::knob); };
     addButtonButton.onClick = [this] { addController(UserDspControllerType::button); };
     addToggleButton.onClick = [this] { addController(UserDspControllerType::toggle); };
+    editModeButton.onClick = [this] { setMode(Mode::edit); };
+    playModeButton.onClick = [this] { setMode(Mode::play); };
 
     tilesViewport.setViewedComponent(&tilesContent, false);
     tilesViewport.setScrollBarsShown(true, false);
     tilesViewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
 
     for (auto* component : std::initializer_list<juce::Component*>
-         { &titleLabel, &statusLabel, &hintLabel, &addKnobButton, &addButtonButton, &addToggleButton, &tilesViewport })
+         { &titleLabel, &statusLabel, &hintLabel, &modeLabel, &midiModeHintLabel,
+           &editModeButton, &playModeButton, &addKnobButton, &addButtonButton, &addToggleButton, &tilesViewport })
     {
         addAndMakeVisible(component);
     }
 
+    setMode(Mode::play);
     syncToProjectAndRuntime();
     startTimerHz(20);
 }
@@ -579,12 +591,32 @@ void RealtimeControlsComponent::resized()
     area.removeFromTop(8);
 
     auto toolbarRow = area.removeFromTop(30);
-    addKnobButton.setBounds(toolbarRow.removeFromLeft(108));
+    modeLabel.setBounds(toolbarRow.removeFromLeft(44));
     toolbarRow.removeFromLeft(6);
-    addButtonButton.setBounds(toolbarRow.removeFromLeft(112));
+    editModeButton.setBounds(toolbarRow.removeFromLeft(72));
     toolbarRow.removeFromLeft(6);
-    addToggleButton.setBounds(toolbarRow.removeFromLeft(112));
-    area.removeFromTop(8);
+    playModeButton.setBounds(toolbarRow.removeFromLeft(72));
+    toolbarRow.removeFromLeft(12);
+
+    if (mode == Mode::edit)
+    {
+        addKnobButton.setBounds(toolbarRow.removeFromLeft(108));
+        toolbarRow.removeFromLeft(6);
+        addButtonButton.setBounds(toolbarRow.removeFromLeft(112));
+        toolbarRow.removeFromLeft(6);
+        addToggleButton.setBounds(toolbarRow.removeFromLeft(112));
+        area.removeFromTop(6);
+        midiModeHintLabel.setBounds(area.removeFromTop(30));
+        area.removeFromTop(8);
+    }
+    else
+    {
+        addKnobButton.setBounds({});
+        addButtonButton.setBounds({});
+        addToggleButton.setBounds({});
+        midiModeHintLabel.setBounds({});
+        area.removeFromTop(8);
+    }
 
     tilesViewport.setBounds(area);
     updateTileLayout();
@@ -593,6 +625,28 @@ void RealtimeControlsComponent::resized()
 void RealtimeControlsComponent::timerCallback()
 {
     syncToProjectAndRuntime();
+}
+
+void RealtimeControlsComponent::setMode(Mode nextMode)
+{
+    mode = nextMode;
+    const auto isEditMode = mode == Mode::edit;
+
+    editModeButton.setToggleState(isEditMode, juce::dontSendNotification);
+    playModeButton.setToggleState(! isEditMode, juce::dontSendNotification);
+    addKnobButton.setVisible(isEditMode);
+    addButtonButton.setVisible(isEditMode);
+    addToggleButton.setVisible(isEditMode);
+    midiModeHintLabel.setVisible(isEditMode);
+
+    hintLabel.setText(isEditMode
+                          ? "Edit mode changes controller metadata and layout. Use the ... button on a tile to edit details."
+                          : "Play mode is for performance. Controller widgets only send values to DSP and do not open editors.",
+                      juce::dontSendNotification);
+
+    syncToProjectAndRuntime();
+    resized();
+    repaint();
 }
 
 void RealtimeControlsComponent::addController(UserDspControllerType type)
@@ -661,6 +715,9 @@ void RealtimeControlsComponent::moveController(int sourceIndex, int destinationI
 
 void RealtimeControlsComponent::applyControllerValue(int index, float value)
 {
+    if (mode != Mode::play)
+        return;
+
     if (! juce::isPositiveAndBelow(index, static_cast<int>(previewValues.size())))
         return;
 
@@ -698,23 +755,33 @@ void RealtimeControlsComponent::syncToProjectAndRuntime()
     }
 
     juce::String statusText;
+    const auto isEditMode = mode == Mode::edit;
 
     if (lastDefinitions.empty())
     {
-        statusText = "No custom controls yet. Add knobs, buttons, or toggles for your DSP project.";
+        statusText = isEditMode
+                         ? "No custom controls yet. Add knobs, buttons, or toggles for your DSP project."
+                         : "No custom controls yet. Switch to Edit mode to add them.";
     }
     else if (! snapshot.hasActiveModule)
     {
-        statusText = "Preview is active. Compile the project to link " + juce::String(lastDefinitions.size())
-                   + " control" + (lastDefinitions.size() == 1 ? "" : "s") + " to DSP.";
+        statusText = isEditMode
+                         ? "Edit mode is active. Compile the project to link "
+                           + juce::String(lastDefinitions.size())
+                           + " control" + (lastDefinitions.size() == 1 ? "" : "s") + " to DSP."
+                         : "Play mode is active, but the current controller layout is only a preview. Compile to link it to DSP.";
     }
     else if (! layoutMatchesRuntime)
     {
-        statusText = "Preview is active. Controller layout changed since the last compile, so compile again to relink DSP.";
+        statusText = isEditMode
+                         ? "Edit mode is active. Controller layout changed since the last compile, so compile again to relink DSP."
+                         : "Play mode is active, but controller metadata changed. Compile again before using the live layout.";
     }
     else
     {
-        statusText = "Loaded module: " + snapshot.processorName + ". Runtime controls are live.";
+        statusText = isEditMode
+                         ? "Edit mode is active. Runtime stays linked, but interaction is intentionally disabled while you change metadata."
+                         : "Loaded module: " + snapshot.processorName + ". Runtime controls are live.";
     }
 
     statusLabel.setText(statusText, juce::dontSendNotification);
@@ -734,6 +801,7 @@ void RealtimeControlsComponent::syncToProjectAndRuntime()
         tiles[static_cast<std::size_t>(index)]->updateFromState(index,
                                                                 static_cast<int>(tiles.size()),
                                                                 lastDefinitions[static_cast<std::size_t>(index)],
+                                                                mode == Mode::edit ? ControlsDisplayMode::edit : ControlsDisplayMode::play,
                                                                 layoutMatchesRuntime,
                                                                 displayValue,
                                                                 ! layoutMatchesRuntime && snapshot.hasActiveModule);

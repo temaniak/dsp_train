@@ -273,6 +273,7 @@ juce::Array<juce::var> controllerDefinitionsToVar(const std::vector<UserDspContr
         object->setProperty("type", userDspControllerTypeToStableString(definition.type));
         object->setProperty("label", definition.label);
         object->setProperty("codeName", definition.codeName);
+        object->setProperty("midiBindingHint", definition.midiBindingHint);
         values.add(juce::var(object));
     }
 
@@ -301,6 +302,7 @@ juce::Result controllerDefinitionsFromVar(const juce::var& value, std::vector<Us
         definition.type = userDspControllerTypeFromStableString(object->getProperty("type").toString());
         definition.label = object->getProperty("label").toString().trim();
         definition.codeName = object->getProperty("codeName").toString().trim();
+        definition.midiBindingHint = object->getProperty("midiBindingHint").toString().trim();
         definitions.push_back(std::move(definition));
     }
 
@@ -438,6 +440,7 @@ juce::Result UserDspProjectManager::updateController(int index, const UserDspCon
     auto updatedDefinition = definition;
     updatedDefinition.label = updatedDefinition.label.trim();
     updatedDefinition.codeName = updatedDefinition.codeName.trim();
+    updatedDefinition.midiBindingHint = updatedDefinition.midiBindingHint.trim();
 
     if (const auto validationResult = userdsp::validateControllerDefinition(updatedDefinition); validationResult.failed())
         return validationResult;

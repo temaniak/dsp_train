@@ -23,8 +23,15 @@ public:
     void setRefreshSuspended(bool shouldSuspend);
 
 private:
+    enum class Mode
+    {
+        edit,
+        play
+    };
+
     void timerCallback() override;
 
+    void setMode(Mode nextMode);
     void addController(UserDspControllerType type);
     void editController(int index);
     void deleteController(int index);
@@ -41,6 +48,10 @@ private:
     juce::Label titleLabel;
     juce::Label statusLabel;
     juce::Label hintLabel;
+    juce::Label modeLabel;
+    juce::Label midiModeHintLabel;
+    juce::TextButton editModeButton { "Edit" };
+    juce::TextButton playModeButton { "Play" };
     juce::TextButton addKnobButton { "Add Knob" };
     juce::TextButton addButtonButton { "Add Button" };
     juce::TextButton addToggleButton { "Add Toggle" };
@@ -51,4 +62,5 @@ private:
     std::vector<float> previewValues;
     bool previewValuesNeedPush = false;
     bool layoutMatchesRuntime = false;
+    Mode mode = Mode::play;
 };

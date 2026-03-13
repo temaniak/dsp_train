@@ -69,13 +69,13 @@ int main()
     if (projectManager.addController(UserDspControllerType::toggle).failed())
         return 9;
 
-    if (projectManager.updateController(0, { UserDspControllerType::knob, "Drive Amount", "driveAmount" }).failed())
+    if (projectManager.updateController(0, { UserDspControllerType::knob, "Drive Amount", "driveAmount", "CC 21 / Ch 1" }).failed())
         return 10;
 
-    if (projectManager.updateController(1, { UserDspControllerType::button, "Fire", "fireButton" }).failed())
+    if (projectManager.updateController(1, { UserDspControllerType::button, "Fire", "fireButton", "Note C3 / Ch 1" }).failed())
         return 11;
 
-    if (projectManager.updateController(2, { UserDspControllerType::toggle, "Bypass", "bypassToggle" }).failed())
+    if (projectManager.updateController(2, { UserDspControllerType::toggle, "Bypass", "bypassToggle", "CC 64 / Ch 1" }).failed())
         return 12;
 
     if (projectManager.moveController(2, 0).failed())
@@ -122,9 +122,9 @@ int main()
         || loadedProjectManager.getNodeForPath("include/filters/OnePole.h") == nullptr
         || loadedProjectManager.getActiveFilePath() != "src/main.cpp"
         || loadedControllers.size() != 3
-        || loadedControllers[0] != UserDspControllerDefinition { UserDspControllerType::toggle, "Bypass", "bypassToggle" }
-        || loadedControllers[1] != UserDspControllerDefinition { UserDspControllerType::knob, "Drive Amount", "driveAmount" }
-        || loadedControllers[2] != UserDspControllerDefinition { UserDspControllerType::button, "Fire", "fireButton" }
+        || loadedControllers[0] != UserDspControllerDefinition { UserDspControllerType::toggle, "Bypass", "bypassToggle", "CC 64 / Ch 1" }
+        || loadedControllers[1] != UserDspControllerDefinition { UserDspControllerType::knob, "Drive Amount", "driveAmount", "CC 21 / Ch 1" }
+        || loadedControllers[2] != UserDspControllerDefinition { UserDspControllerType::button, "Fire", "fireButton", "Note C3 / Ch 1" }
         || loadedAudioState != audioState)
     {
         return 16;

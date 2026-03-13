@@ -16,12 +16,14 @@ struct UserDspControllerDefinition
     UserDspControllerType type = UserDspControllerType::knob;
     juce::String label;
     juce::String codeName;
+    juce::String midiBindingHint;
 
     bool operator==(const UserDspControllerDefinition& other) const noexcept
     {
         return type == other.type
             && label == other.label
-            && codeName == other.codeName;
+            && codeName == other.codeName
+            && midiBindingHint == other.midiBindingHint;
     }
 
     bool operator!=(const UserDspControllerDefinition& other) const noexcept
