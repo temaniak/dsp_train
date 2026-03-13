@@ -6,6 +6,9 @@ for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
 
 set "BUILD_DIR=%PROJECT_ROOT%\build"
 if not "%~1"=="" set "BUILD_DIR=%~1"
+set "BUILD_CONFIG=Release"
+if defined DSP_EDU_BUILD_CONFIG set "BUILD_CONFIG=%DSP_EDU_BUILD_CONFIG%"
+if not "%~2"=="" set "BUILD_CONFIG=%~2"
 
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (
@@ -35,5 +38,5 @@ set "JUCE_PATH=C:\Users\User\JUCE"
 if defined JUCE_DIR set "JUCE_PATH=%JUCE_DIR%"
 set "JUCE_ARG=-DJUCE_DIR:PATH=%JUCE_PATH%"
 
-cmake -S "%PROJECT_ROOT%" -B "%BUILD_DIR%" -G Ninja %JUCE_ARG%
+cmake -S "%PROJECT_ROOT%" -B "%BUILD_DIR%" -G Ninja %JUCE_ARG% -DCMAKE_BUILD_TYPE=%BUILD_CONFIG%
 exit /b %errorlevel%

@@ -6,8 +6,11 @@ for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
 
 set "BUILD_DIR=%PROJECT_ROOT%\build"
 if not "%~1"=="" set "BUILD_DIR=%~1"
+set "BUILD_CONFIG=Release"
+if defined DSP_EDU_BUILD_CONFIG set "BUILD_CONFIG=%DSP_EDU_BUILD_CONFIG%"
+if not "%~2"=="" set "BUILD_CONFIG=%~2"
 
-call "%SCRIPT_DIR%configure_windows.cmd" "%BUILD_DIR%"
+call "%SCRIPT_DIR%configure_windows.cmd" "%BUILD_DIR%" "%BUILD_CONFIG%"
 if errorlevel 1 exit /b %errorlevel%
 
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -32,5 +35,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-cmake --build "%BUILD_DIR%" --config Release
+cmake --build "%BUILD_DIR%" --config %BUILD_CONFIG%
 exit /b %errorlevel%

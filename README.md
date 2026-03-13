@@ -292,11 +292,19 @@ cmake --build build --target DspEducationStand -j
 cmd /c scripts\build_windows.cmd build
 ```
 
+The helper defaults to `Release` with `Ninja`.
+
 If needed:
 
 ```powershell
 $env:JUCE_DIR = "C:\Path\To\JUCE"
 cmd /c scripts\build_windows.cmd build
+```
+
+Debug build:
+
+```powershell
+cmd /c scripts\build_windows.cmd build Debug
 ```
 
 ### Tests
@@ -548,11 +556,19 @@ cmake --build build --target DspEducationStand -j
 cmd /c scripts\build_windows.cmd build
 ```
 
+Хелпер по умолчанию собирает `Release` с `Ninja`.
+
 При необходимости:
 
 ```powershell
 $env:JUCE_DIR = "C:\Path\To\JUCE"
 cmd /c scripts\build_windows.cmd build
+```
+
+Сборка `Debug`:
+
+```powershell
+cmd /c scripts\build_windows.cmd build Debug
 ```
 
 ### Тесты

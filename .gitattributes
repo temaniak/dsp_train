@@ -1,0 +1,30 @@
+* text=auto
+
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+*.md text eol=lf
+*.txt text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.cpp text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+*.dll binary
+*.dylib binary
+*.exe binary
+*.pdb binary
+*.obj binary
+*.o binary
+*.lib binary
+*.exp binary
+*.ilk binary
+*.wav binary

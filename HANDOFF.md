@@ -1,188 +1,279 @@
 # HANDOFF
 
-## 1. Goal
+This file is a developer handoff for the next task. It is intentionally focused on current implementation state, real entry points, and likely next steps.
 
-Current milestone goal:
+## 1. Project Summary
 
-- Keep one shared JUCE desktop codebase for Windows and macOS.
-- Turn the user DSP area from a single-file editor into a project-based workflow.
-- Support `.dspedu` project save/load, multi-file compilation, and right-side project navigator.
-- Keep runtime user DSP compilation/hot reload working on macOS and Windows.
-- Move the editor area toward an IDE-like UX with:
-  - dark professional theme,
-  - movable splitters,
-  - code font size control.
+`DSP Education Stand` is a JUCE standalone desktop application used as a DSP learning playground.
 
-## 2. What Is Already Done
+The project has moved beyond the original mono MVP. The current app is a project-based user DSP environment with:
 
-Cross-platform and user DSP pipeline:
+- built-in signal sources
+- built-in DSP processors
+- user DSP projects stored as `.dspedu` archives
+- real dynamic module compilation and hot reload
+- custom runtime controls for user DSP
+- audio device and channel configuration
+- preferred audio configuration reported by the DSP module
+- oscilloscope popup window
+- dark IDE-like UI
 
-- `JUCE_DIR` is platform-neutral in CMake.
-- macOS build support was added alongside Windows.
-- user DSP build scripts now support platform-specific shared modules:
-  - Windows: `.dll`
-  - macOS: `.dylib`
-- user DSP compilation no longer works from one raw source string; it now stages a whole project snapshot and builds all `.cpp` files.
+The repository currently targets local developer builds on Windows and macOS.
+The Windows path was re-verified locally on 2026-03-13.
 
-Project model:
+## 2. What Is Working
 
-- Added `UserDspProjectManager` with:
-  - in-memory project tree,
-  - one active `CodeDocument`,
-  - project metadata,
-  - dirty tracking,
-  - ZIP archive save/load as `.dspedu`,
-  - create/rename/move/delete/import/export actions.
-- Added `UserDspProjectUtils` for:
-  - validation,
-  - legacy wrapper stripping,
-  - processor class detection helpers,
-  - wrapper generation helpers.
-- Default new project now creates:
-  - `src/`
-  - `include/`
-  - `src/ExampleUserProcessor.cpp`
+At a high level, the following features are already present in the codebase:
 
-UI:
+- JUCE standalone application shell
+- audio engine with device selection and runtime reconfiguration
+- signal sources:
+  - sine
+  - white noise
+  - impulse
+  - WAV file
+  - live hardware input
+- built-in DSP:
+  - bypass
+  - gain
+  - hard clip
+  - one-pole lowpass
+  - simple delay
+- project-based user DSP editing and compilation
+- safe hot reload with fallback to previous valid module
+- custom realtime controls:
+  - knobs
+  - buttons
+  - toggles
+- preferred audio config flow from user DSP to host
+- requested vs actual audio configuration reporting
+- stereo oscilloscope tool window
+- minimal optional tests
 
-- Main UI is now project-first.
-- Added right-side project navigator tree.
-- Added toolbar actions:
-  - `New Project`
-  - `Open Project`
-  - `Save Project`
-  - `Save Project As`
-  - `Compile`
-- Added dirty project prompt flow on:
-  - new project,
-  - open project,
-  - app close / quit.
-- Added movable splitters:
-  - editor vs navigator
-  - workspace vs compile log
-- Added code font size control in the editor toolbar.
-- Applied dark IDE-style theme across the editor-facing UI:
-  - main background,
-  - panels,
-  - toolbar,
-  - tree,
-  - code editor,
-  - compile log,
-  - popups and menus,
-  - status areas.
+## 3. Current Product Direction
 
-Templates and workflow:
+The app is no longer just a simple "type code in one editor and compile a DLL" demo.
 
-- user DSP class-only workflow is in place:
-  - users do not manually include `UserDspApi.h`
-  - users do not manually write `DSP_EDU_DEFINE_SIMPLE_PLUGIN(...)`
-- wrapper injection stays internal.
-- legacy `.cpp` import strips manual SDK include/export macro.
+The current direction is:
 
-Testing support:
+- user DSP projects as the primary workflow
+- runtime controls exposed to user DSP code
+- device/channel/routing visibility in the UI
+- cross-platform local developer workflow
 
-- Added regression coverage in `tests/TestMain.cpp` for:
-  - project archive save/load roundtrip,
-  - nested folders/files,
-  - legacy import stripping,
-  - processor class persistence.
+There is still legacy code from the earlier simpler iteration in the repository, but the active direction is the project-based user DSP workflow.
 
-## 3. Changed Files
+## 4. Build Entry Points
 
-Modified:
+### Main CMake target
 
-- `.gitignore`
+- Root build file: `CMakeLists.txt`
+- Main app target: `DspEducationStand`
+- Optional tests target: `DspEducationStandTests`
+
+### Windows
+
+- Configure/build helper: `scripts/build_windows.cmd`
+- Configure helper: `scripts/configure_windows.cmd`
+- User DSP module build helper: `scripts/build_user_dsp.cmd`
+
+Requirements:
+
+- `JUCE_DIR` must point to a local JUCE checkout
+- Ninja
+- MSVC Build Tools
+
+Typical build:
+
+```powershell
+cmd /c scripts\build_windows.cmd build
+```
+
+Verified on 2026-03-13:
+
+- fresh Windows configure/build succeeded with MSVC + Ninja
+- fresh optional tests configure/build succeeded
+- `DspEducationStandTests.exe` ran successfully
+- `scripts/build_user_dsp.cmd` successfully produced a `.dll` exporting `dspedu_get_api`
+
+Current helper behavior:
+
+- `scripts/configure_windows.cmd` configures plain `Ninja` and explicitly passes `-DCMAKE_BUILD_TYPE`
+- default helper configuration is `Release`
+- optional override is supported as the second argument, for example `cmd /c scripts\build_windows.cmd build Debug`
+
+### macOS
+
+- User DSP module build helper: `scripts/build_user_dsp.sh`
+
+README already documents the expected CMake flow for macOS.
+
+## 5. Runtime Architecture
+
+### Main UI
+
+Primary UI composition lives in:
+
+- `src/app/MainComponent.h`
+- `src/app/MainComponent.cpp`
+
+This is the central coordination layer for:
+
+- transport
+- source controls
+- built-in DSP controls
+- project actions
+- compile actions
+- device configuration
+- popup tool windows
+
+### Audio
+
+Core audio runtime:
+
+- `src/audio/AudioEngine.h`
+- `src/audio/AudioEngine.cpp`
+- `src/audio/AudioConfiguration.h`
+- `src/audio/SignalSources.*`
+- `src/audio/WavFileSource.*`
+
+The engine handles:
+
+- source generation
+- input/output device state
+- channel configuration
+- routing
+- built-in DSP path
+- user DSP path
+
+### User DSP
+
+Main subsystem files:
+
+- `src/userdsp/UserDspHost.*`
+- `src/userdsp/UserDspCompiler.*`
+- `src/userdsp/UserDspProjectManager.*`
+- `src/userdsp/UserDspProjectUtils.*`
+- `src/userdsp/UserDspControllers.h`
+- `user_dsp_sdk/UserDspApi.h`
+
+This subsystem is responsible for:
+
+- project layout and serialization
+- staging source files for compilation
+- loading the compiled module
+- exposing runtime controls to the module
+- reading preferred audio config from the module
+- maintaining safe swap/fallback behavior
+
+### UI Tools
+
+Related files:
+
+- `src/ui/ToolWindow.*`
+- `src/ui/RealtimeControlsComponent.*`
+- `src/ui/OscilloscopeComponent.*`
+- `src/ui/OscilloscopeBuffer.*`
+- `src/ui/DarkIdeLookAndFeel.*`
+
+These provide the dark UI, popup windows, controls window, and oscilloscope window.
+
+## 6. User DSP API Status
+
+Important: the current user DSP workflow is not the old "single text file with manual SDK include and plugin macro" model.
+
+The current implementation stages a project and injects the SDK/include/entry wrapper automatically.
+
+The current API is based around:
+
+- `getPreferredAudioConfig(...)`
+- `prepare(const DspEduProcessSpec&)`
+- `reset()`
+- `process(const float* const* inputs, float* const* outputs, int numInputChannels, int numOutputChannels, int numSamples)`
+
+The controls system exposes generated fields under `controls.<name>`.
+
+Examples from the current direction:
+
+- `controls.driveKnob`
+- `controls.fireButton`
+- `controls.bypassToggle`
+
+Do not assume the earlier simpler macro-based workflow is still the main path. There are remnants from the earlier iteration in the repository, but the project has already evolved beyond that.
+
+## 7. Important Current Files
+
+Use these first when continuing work:
+
 - `CMakeLists.txt`
 - `README.md`
-- `scripts/build_user_dsp.cmd`
-- `src/app/DspEducationStandApplication.cpp`
-- `src/app/MainComponent.cpp`
-- `src/app/MainComponent.h`
-- `src/app/MainWindow.cpp`
-- `src/app/MainWindow.h`
-- `src/ui/OscilloscopeComponent.cpp`
-- `src/userdsp/UserCodeDocumentManager.cpp`
+- `TODO.md`
+- `src/app/MainComponent.*`
+- `src/audio/AudioEngine.*`
+- `src/userdsp/UserDspHost.*`
+- `src/userdsp/UserDspCompiler.*`
+- `src/userdsp/UserDspProjectManager.*`
+- `src/userdsp/UserDspProjectUtils.*`
+- `src/ui/RealtimeControlsComponent.*`
+- `user_dsp_sdk/UserDspApi.h`
+
+## 8. Likely Legacy / Stale Files
+
+These files still exist in the tree but are not part of the current main target in `CMakeLists.txt`:
+
 - `src/userdsp/UserCodeDocumentManager.h`
-- `src/userdsp/UserDspCompiler.cpp`
-- `src/userdsp/UserDspCompiler.h`
-- `src/userdsp/UserDspHost.cpp`
-- `templates/UserDspTemplate.cpp`
-- `tests/TestMain.cpp`
+- `src/userdsp/UserCodeDocumentManager.cpp`
 
-New:
+They appear to belong to an earlier simpler editor flow. Treat them carefully before using them as a source of truth.
 
-- `scripts/build_user_dsp.sh`
-- `src/userdsp/UserDspProjectManager.cpp`
-- `src/userdsp/UserDspProjectManager.h`
-- `src/userdsp/UserDspProjectUtils.cpp`
-- `src/userdsp/UserDspProjectUtils.h`
-- `HANDOFF.md`
+If future cleanup happens, verify whether they should be removed or merged into the project-based workflow.
 
-## 4. What Still Needs To Be Done
+Also note:
 
-High-value next steps:
+- older existing build directories may still contain stale references to these legacy files
+- a clean reconfigure follows the current `CMakeLists.txt` source list
 
-- Manually smoke-test the GUI after the latest dark-theme/splitter/font-size changes:
-  - drag both splitters,
-  - change code font size,
-  - create/move/rename/delete files and folders,
-  - open/save `.dspedu`,
-  - compile from a multi-file project,
-  - check popup menus and dialogs visually.
-- Decide whether to fully remove old `UserCodeDocumentManager` sources from the repository, not just from the main app target.
-- Update README further if needed to mention:
-  - dark IDE theme,
-  - movable splitters,
-  - code font size control.
-- Consider persisting UI/editor preferences:
-  - code font size,
-  - splitter positions,
-  - tree openness state across launches.
-- Clean up remaining compiler warnings in:
-  - `src/audio/WavFileSource.cpp`
-  - `src/presets/PresetManager.cpp`
+## 9. Documentation Notes
 
-## 5. Commands / Tests Run And Results
+- `README.md` is currently the main user-facing project description.
+- In raw Windows terminal output, the Russian section may look garbled because of code page issues. That is a terminal rendering issue, not necessarily a content issue in editors/GitHub.
+- The Windows helper scripts now default to a `Release` build with plain Ninja and accept an optional explicit build type as the second argument.
 
-Builds:
+## 10. Open Technical Directions
 
-- `cmake -S . -B build -DJUCE_DIR=/Users/evgeniystrukov/Desktop/JuceProject/JUCE`
-  - result: succeeded
-- `cmake -S . -B build -DDSP_EDU_BUILD_TESTS=ON -DJUCE_DIR=/Users/evgeniystrukov/Desktop/JuceProject/JUCE`
-  - result: succeeded
-- `cmake --build build --target DspEducationStand -j 4`
-  - result: succeeded
-- `cmake --build build --target DspEducationStandTests -j 4`
-  - result: succeeded
+The current `TODO.md` points at these next directions:
 
-Tests:
+1. Remove or de-emphasize built-in DSP so that user DSP projects become the primary focus.
+2. Add MIDI input, MIDI learn, and MIDI-to-control mapping.
+3. Rework the left-side menu and reduce UI noise.
+4. Improve the new-project onboarding flow.
+5. Add more educational example projects.
 
-- `./build/DspEducationStandTests_artefacts/DspEducationStandTests`
-  - result: exit code `0`
+These are good candidates for the next task.
 
-Manual pipeline smoke check:
+## 11. Suggested First Checks For The Next Task
 
-- `/bin/sh scripts/build_user_dsp.sh <temp_project_dir> /Users/evgeniystrukov/dsp_train/user_dsp_sdk <temp_out.dylib> <temp_out.dSYM>`
-  - result: succeeded, `.dylib` produced from a multi-file temp project
+Before making changes in the next task:
 
-macOS app artifact:
+1. Start from `CMakeLists.txt` to confirm which files are actually compiled.
+2. Read `MainComponent`, `AudioEngine`, and `UserDspProjectManager` before changing workflow.
+3. Treat `README.md` as product-level intent and `TODO.md` as active direction.
+4. Verify whether a file is actively wired into the build before refactoring it.
 
-- `build/DspEducationStand_artefacts/DSP Education Stand.app`
-  - result: app target builds successfully
+## 12. Local Repository State
 
-## 6. Known Problems And Hypotheses
+At the time of writing:
 
-Known issues:
+- this workspace is a git repository
+- the project is oriented around local developer builds
+- a clean Windows app build, clean Windows tests build, and Windows user DSP module build path were all re-verified on 2026-03-13
+- there is no assumption here of packaged, signed, or notarized distribution
 
-- The native macOS title bar is still native because the app uses `setUsingNativeTitleBar(true)`. The custom dark theme does not recolour that title bar.
-- The latest UI work is compile-verified but not manually smoke-tested after the final theme/splitter/font-size pass.
-- There are still old warnings in:
-  - `src/audio/WavFileSource.cpp:15`
-  - `src/presets/PresetManager.cpp:47`
+## 13. Short Continuation Summary
 
-Hypotheses / likely causes if something looks wrong in the new UI:
+If another task picks this up cold, the correct mental model is:
 
-- If popup/dialog colours look partially inconsistent, some JUCE native dialog elements may still be controlled by platform look-and-feel rather than custom component colours.
-- If splitter positions feel odd on first launch, the current layout uses reasonable defaults but does not yet persist user-adjusted sizes.
-- If code syntax colours are not ideal for all token kinds, JUCE C++ tokeniser exposes only a limited token set (`Error`, `Comment`, `Keyword`, `Operator`, `Identifier`, `Integer`, `Float`, `String`, `Bracket`, `Punctuation`, `Preprocessor Text`), so the requested semantic palette is approximated rather than fully semantic.
-- `UserCodeDocumentManager` still exists in the repo as legacy code even though the main app now works through `UserDspProjectManager`; that can confuse future maintenance if left in place.
+- this is a JUCE-based DSP playground
+- the app already supports project-based user DSP compilation
+- runtime controls and preferred audio config are already part of the design
+- the main continuation work is product refinement, workflow cleanup, and additional input/control systems such as MIDI
