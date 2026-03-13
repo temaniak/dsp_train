@@ -36,8 +36,6 @@ target_sources(DspEducationStand
         src/audio/AudioEngine.cpp
         src/audio/SignalSources.cpp
         src/audio/WavFileSource.cpp
-        src/dsp/BuiltinProcessors.cpp
-        src/presets/PresetManager.cpp
         src/ui/DarkIdeLookAndFeel.cpp
         src/ui/OscilloscopeBuffer.cpp
         src/ui/OscilloscopeComponent.cpp
@@ -85,8 +83,6 @@ if (DSP_EDU_BUILD_TESTS)
     target_sources(DspEducationStandTests
         PRIVATE
             tests/TestMain.cpp
-            src/dsp/BuiltinProcessors.cpp
-            src/presets/PresetManager.cpp
             src/userdsp/UserDspProjectManager.cpp
             src/userdsp/UserDspProjectUtils.cpp)
 

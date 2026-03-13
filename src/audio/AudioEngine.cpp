@@ -128,14 +128,12 @@ AudioEngine::Snapshot AudioEngine::getSnapshot() const
     snapshot.sampleRate = currentSampleRate.load(std::memory_order_relaxed);
     snapshot.blockSize = currentBlockSize.load(std::memory_order_relaxed);
     snapshot.sourceType = sourceType.load(std::memory_order_relaxed);
-    snapshot.processingMode = processingMode.load(std::memory_order_relaxed);
     snapshot.sourceGain = sourceGain.load(std::memory_order_relaxed);
     snapshot.sineFrequency = sineSource.getFrequency();
     snapshot.wavLoaded = wavFileSource.hasFileLoaded();
     snapshot.wavLooping = wavFileSource.isLooping();
     snapshot.wavPosition = wavFileSource.getPositionNormalized();
     snapshot.wavFileName = wavFileSource.getLoadedFileName();
-    snapshot.builtinProcessor = builtinProcessor.getSelectedProcessor();
 
     const juce::ScopedLock lock(stateLock);
     snapshot.deviceError = lastDeviceError;
@@ -198,12 +196,6 @@ void AudioEngine::setSourceType(SourceType type) noexcept
     requestResetForNextBlock();
 }
 
-void AudioEngine::setProcessingMode(ProcessingMode mode) noexcept
-{
-    processingMode.store(mode, std::memory_order_relaxed);
-    requestResetForNextBlock();
-}
-
 void AudioEngine::setSourceGain(float newGain) noexcept
 {
     sourceGain.store(juce::jlimit(0.0f, 1.0f, newGain), std::memory_order_relaxed);
@@ -212,39 +204,6 @@ void AudioEngine::setSourceGain(float newGain) noexcept
 void AudioEngine::setSineFrequency(float frequency) noexcept
 {
     sineSource.setFrequency(juce::jlimit(20.0f, 20000.0f, frequency));
-}
-
-void AudioEngine::setBuiltinProcessorType(BuiltinProcessorType type) noexcept
-{
-    builtinProcessor.setSelectedProcessor(type);
-    builtinProcessor.resetParametersToDefaults(type);
-    requestResetForNextBlock();
-}
-
-BuiltinProcessorType AudioEngine::getBuiltinProcessorType() const noexcept
-{
-    return builtinProcessor.getSelectedProcessor();
-}
-
-void AudioEngine::setBuiltinParameter(int index, float value) noexcept
-{
-    builtinProcessor.setParameter(index, value);
-}
-
-float AudioEngine::getBuiltinParameter(int index) const noexcept
-{
-    return builtinProcessor.getParameter(index);
-}
-
-BuiltinPresetData AudioEngine::captureBuiltinPreset() const noexcept
-{
-    return builtinProcessor.capturePresetData();
-}
-
-void AudioEngine::applyBuiltinPreset(const BuiltinPresetData& preset) noexcept
-{
-    builtinProcessor.applyPresetData(preset);
-    requestResetForNextBlock();
 }
 
 juce::Result AudioEngine::loadWavFile(const juce::File& file)
@@ -302,20 +261,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     if (resetForNextBlock.exchange(false, std::memory_order_relaxed))
     {
         resetSourcesForCurrentSelection();
-        builtinProcessor.reset();
         userDspHost.requestReset();
     }
 
     if (! transportRunning.load(std::memory_order_relaxed))
         return;
 
-    const auto mode = processingMode.load(std::memory_order_relaxed);
-    const auto logicalInputChannels = mode == ProcessingMode::userModule
-                                    ? currentLogicalInputChannels.load(std::memory_order_relaxed)
-                                    : juce::jlimit(1, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, juce::jmax(1, numOutputChannels));
-    const auto logicalOutputChannels = mode == ProcessingMode::userModule
-                                     ? currentLogicalOutputChannels.load(std::memory_order_relaxed)
-                                     : juce::jlimit(1, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, juce::jmax(1, numOutputChannels));
+    const auto logicalInputChannels = currentLogicalInputChannels.load(std::memory_order_relaxed);
+    const auto logicalOutputChannels = currentLogicalOutputChannels.load(std::memory_order_relaxed);
 
     sourceBuffer.clear();
     processedBuffer.clear();
@@ -339,10 +292,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     for (int channel = 0; channel < logicalOutputChannels; ++channel)
         outputPointers[static_cast<std::size_t>(channel)] = processedBuffer.getWritePointer(channel);
 
-    if (mode == ProcessingMode::builtIn)
-        builtinProcessor.process(inputPointers.data(), outputPointers.data(), logicalInputChannels, logicalOutputChannels, numSamples);
-    else
-        userDspHost.process(inputPointers.data(), outputPointers.data(), logicalInputChannels, logicalOutputChannels, numSamples);
+    userDspHost.process(inputPointers.data(), outputPointers.data(), logicalInputChannels, logicalOutputChannels, numSamples);
 
     oscilloscopeBuffer.pushSamples(reinterpret_cast<const float* const*>(outputPointers.data()), logicalOutputChannels, numSamples);
     routeProcessedToOutputs(outputChannelData, numOutputChannels, logicalOutputChannels, numSamples);
@@ -364,7 +314,6 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     whiteNoiseSource.prepare(sampleRate, blockSize);
     impulseSource.prepare(sampleRate, blockSize);
     wavFileSource.prepare(sampleRate, blockSize);
-    builtinProcessor.prepare(sampleRate, blockSize);
     userDspHost.prepare(sampleRate,
                         blockSize,
                         currentLogicalInputChannels.load(std::memory_order_relaxed),

@@ -1,55 +1,44 @@
 # TODO
 
-## 1. Убрать встроенные DSP
+Completed items from the previous roadmap were removed from this file.
+This list tracks what is still left, with a simple status marker:
 
-- Удалить `Built-in DSP` режим из UI и оставить основной фокус на user DSP проектах.
-- Убрать selector built-in processor, preset flow и связанные элементы левой панели.
-- Удалить или изолировать код в `src/dsp/`, если он больше не нужен в runtime.
-- Упростить `AudioEngine`, убрав ветку built-in processing.
+- `[partial]` = groundwork already exists
+- `[todo]` = not started yet
 
-## 2. Добавить MIDI
+## 1. Project Onboarding `[partial]`
 
-- Добавить выбор MIDI input device в UI.
-- Реализовать слой `MIDI -> Control Mapping`.
-- Добавить `MIDI Learn` для контроллеров в окне `Controls`.
-- Поддержать:
-  - `CC -> Knob`
-  - `Note/CC -> Button`
-  - `Note/CC -> Toggle`
-- Сохранять MIDI mappings в `.dspedu` проекте.
-- Продумать realtime-safe передачу MIDI событий в runtime controls.
+- `[partial]` A blank minimal project already exists as the default new-project baseline.
+- `[todo]` Add a clearer `New Project` onboarding flow instead of an immediate silent reset.
+- `[todo]` Let the user choose a project name before the first save.
+- `[todo]` Consider letting the user choose between:
+  - blank project
+  - educational example
+- `[todo]` Make example import/open flow obvious from the main UI.
 
-## 3. Откорректировать боковое меню
+## 2. Example Project UX `[partial]`
 
-- Пересобрать левую панель в более компактный и понятный layout.
-- Сократить визуальный шум и выделить основные действия.
-- Проверить поведение scroll, collapse/expand и доступность кнопок на маленькой высоте окна.
-- Уточнить порядок секций после удаления built-in DSP.
+- `[partial]` Educational example projects already live in `example_projects/`.
+- `[partial]` Ready-to-open `.dspedu` archives now live in `example_project_archives/`.
+- `[todo]` Add individual compile smoke tests for the educational examples.
+- `[todo]` Consider an in-app "Open Example" action.
 
-## 4. Сделать init project
+## 3. MIDI `[todo]`
 
-- Добавить более продуманный сценарий создания нового проекта.
-- На старте проекта задавать:
-  - имя проекта
-  - стартовый template
-  - стартовые controls
-  - базовую preferred audio configuration
-- Свести `New Project` к понятному onboarding flow, а не просто к созданию файлов по умолчанию.
+- `[todo]` Add MIDI input device selection.
+- `[todo]` Add realtime-safe `MIDI -> Control Mapping`.
+- `[todo]` Add `MIDI Learn` in the `Controls` window.
+- `[todo]` Persist MIDI mappings inside `.dspedu` projects.
 
-## 5. Сделать больше обучающих проектов
+## 4. Left Panel Cleanup `[todo]`
 
-- Подготовить несколько example projects в стиле учебных лабораторий.
-- Минимальный набор:
-  - oscillator
-  - tremolo
-  - filter
-  - delay
-  - distortion
-  - envelope / gate
-  - stereo routing example
-  - MIDI control example
-- Для каждого примера показать:
-  - структуру проекта
-  - controls
-  - связь `controls.<codeName>` с кодом
-  - preferred audio configuration
+- `[todo]` Rebalance the order and density of the left-side controls.
+- `[todo]` Reduce visual noise in the audio-device section.
+- `[todo]` Re-check scrolling and accessibility on smaller window heights.
+
+## 5. Validation And Polish `[partial]`
+
+- `[partial]` Basic automated coverage for project archive save/load already exists.
+- `[todo]` Add more automated coverage around project archive loading/saving.
+- `[todo]` Consider compile-time validation helpers for common user-DSP mistakes.
+- `[todo]` Address the remaining `parentComponent` shadowing warning in `src/ui/ToolWindow.cpp`.

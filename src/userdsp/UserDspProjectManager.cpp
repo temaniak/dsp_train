@@ -973,12 +973,11 @@ void UserDspProjectManager::resetToNewProjectState()
     processorClassName = userdsp::getDefaultTemplateProcessorClassName();
     controllerDefinitions = userdsp::getDefaultTemplateControllers();
     audioState = {};
-    audioState.cachedPreferred.preferredInputChannels = 1;
+    audioState.cachedPreferred.preferredInputChannels = 2;
     audioState.cachedPreferred.preferredOutputChannels = 2;
 
     auto* srcFolder = addFolderNode(*rootNode, "src");
-    addFolderNode(*rootNode, "include");
-    auto* mainFile = addFileNode(*srcFolder, "ExampleUserProcessor.cpp", userdsp::getDefaultTemplateSource());
+    auto* mainFile = addFileNode(*srcFolder, "main.cpp", userdsp::getDefaultTemplateSource());
     sortChildren(*rootNode);
     sortChildren(*srcFolder);
 
@@ -1136,13 +1135,12 @@ void UserDspProjectManager::collectFolderPaths(const UserDspProjectNode& node, s
 bool UserDspProjectManager::matchesDefaultTemplateProject() const
 {
     const auto* srcFolder = getFolderForPath("src");
-    const auto* includeFolder = getFolderForPath("include");
-    const auto* mainFile = getNodeForPath("src/ExampleUserProcessor.cpp");
+    const auto* mainFile = getNodeForPath("src/main.cpp");
 
-    if (srcFolder == nullptr || includeFolder == nullptr || mainFile == nullptr || mainFile->type != UserDspProjectNodeType::file)
+    if (srcFolder == nullptr || mainFile == nullptr || mainFile->type != UserDspProjectNodeType::file)
         return false;
 
-    if (rootNode->children.size() != 2 || srcFolder->children.size() != 1 || ! includeFolder->children.empty())
+    if (rootNode->children.size() != 1 || srcFolder->children.size() != 1)
         return false;
 
     if (controllerDefinitions != userdsp::getDefaultTemplateControllers())

@@ -262,8 +262,7 @@ MainComponent::MainComponent()
     configureSectionLabel(transportHeader, "Transport");
     configureSectionLabel(deviceHeader, "Audio Device");
     configureSectionLabel(wavHeader, "WAV Source");
-    configureSectionLabel(dspHeader, "DSP Mode");
-    configureSectionLabel(builtinHeader, "Built-in DSP");
+    configureSectionLabel(dspHeader, "User DSP");
     configureSectionLabel(userHeader, "User DSP Module");
     configureSectionLabel(toolsHeader, "Tools");
     configureSectionLabel(editorHeader, "Code Editor");
@@ -315,12 +314,6 @@ MainComponent::MainComponent()
     codeFontSizeSlider.setColour(juce::Slider::trackColourId, ide::border.brighter(0.15f));
     codeFontSizeSlider.setColour(juce::Slider::thumbColourId, ide::constant);
     codeFontSizeSlider.setColour(juce::Slider::backgroundColourId, ide::active);
-
-    for (auto& label : builtinParameterLabels)
-        configureBodyLabel(label, {});
-
-    for (auto& slider : builtinParameterSliders)
-        configureSlider(slider, 0.0, 1.0, 0.001);
 
     auto configureCombo = [] (juce::ComboBox& combo)
     {
@@ -380,20 +373,19 @@ MainComponent::MainComponent()
     for (auto* component : std::initializer_list<juce::Component*>
          {
              &controlsViewport, &workspaceResizerBar, navigatorResizeBar.get(), &leftPanelToggleStrip, &navigatorToggleStrip,
-             &sourceHeader, &transportHeader, &deviceHeader, &wavHeader, &dspHeader, &builtinHeader, &userHeader, &toolsHeader, &editorHeader, &navigatorHeader,
+             &sourceHeader, &transportHeader, &deviceHeader, &wavHeader, &dspHeader, &userHeader, &toolsHeader, &editorHeader, &navigatorHeader,
              &logHeader, &projectPathLabel, &codeFontSizeLabel, &codeFontSizeValueLabel, &sourceCombo, &startButton, &stopButton,
              &gainLabel, &gainSlider, &frequencyLabel, &frequencySlider, &inputDeviceLabel, &outputDeviceLabel, &sampleRateLabel, &blockSizeLabel,
              &inputChannelsLabel, &outputChannelsLabel, &inputRoutingLabel, &outputRoutingLabel, &inputDeviceCombo, &outputDeviceCombo,
              &sampleRateCombo, &blockSizeCombo, &preferredAudioStatusLabel, &requestedAudioStatusLabel, &actualAudioStatusLabel, &overrideAudioStatusLabel,
              &warningAudioStatusLabel, &loadWavButton,
-             &wavFileLabel, &wavLoopToggle, &wavPositionLabel, &wavPositionSlider, &processingModeCombo, &builtinProcessorCombo,
-             &savePresetButton, &loadPresetButton, &newProjectButton, &openProjectButton, &saveProjectButton, &saveProjectAsButton,
+             &wavFileLabel, &wavLoopToggle, &wavPositionLabel, &wavPositionSlider, &newProjectButton, &openProjectButton, &saveProjectButton, &saveProjectAsButton,
              &compileButton, &showOscilloscopeButton, &showControlsButton, &toggleLeftPanelButton, &toggleNavigatorButton,
              &codeFontSizeSlider, &processorClassLabel, &processorClassEditor, &compileStatusLabel, &buildLogEditor, &codeEditor
          })
     {
         if (component == &sourceHeader || component == &transportHeader || component == &wavHeader || component == &dspHeader
-            || component == &deviceHeader || component == &builtinHeader || component == &userHeader || component == &toolsHeader || component == &sourceCombo
+            || component == &deviceHeader || component == &userHeader || component == &toolsHeader || component == &sourceCombo
             || component == &startButton || component == &stopButton || component == &gainLabel || component == &gainSlider
             || component == &frequencyLabel || component == &frequencySlider || component == &inputDeviceLabel || component == &outputDeviceLabel
             || component == &sampleRateLabel || component == &blockSizeLabel || component == &inputChannelsLabel || component == &outputChannelsLabel
@@ -402,8 +394,7 @@ MainComponent::MainComponent()
             || component == &requestedAudioStatusLabel || component == &actualAudioStatusLabel || component == &overrideAudioStatusLabel
             || component == &warningAudioStatusLabel
             || component == &loadWavButton || component == &wavFileLabel || component == &wavLoopToggle || component == &wavPositionLabel
-            || component == &wavPositionSlider || component == &processingModeCombo || component == &builtinProcessorCombo
-            || component == &savePresetButton || component == &loadPresetButton || component == &showOscilloscopeButton
+            || component == &wavPositionSlider || component == &showOscilloscopeButton
             || component == &showControlsButton)
         {
             controlsContent.addAndMakeVisible(component);
@@ -417,12 +408,6 @@ MainComponent::MainComponent()
     addAndMakeVisible(projectTreeView);
     controlsContent.addAndMakeVisible(userModuleStatusLabel);
 
-    for (auto& label : builtinParameterLabels)
-        controlsContent.addAndMakeVisible(label);
-
-    for (auto& slider : builtinParameterSliders)
-        controlsContent.addAndMakeVisible(slider);
-
     for (auto& combo : inputRoutingCombos)
         controlsContent.addAndMakeVisible(combo);
 
@@ -431,14 +416,12 @@ MainComponent::MainComponent()
 
     audioEngine.setSourceGain(0.2f);
     audioEngine.setSineFrequency(440.0f);
-    audioEngine.setBuiltinProcessorType(BuiltinProcessorType::bypass);
 
     if (const auto initResult = audioEngine.initialise(); initResult.failed())
         showErrorMessage("Audio Initialisation Failed", initResult.getErrorMessage());
     else
         applyCurrentProjectAudioState();
 
-    refreshBuiltinControls();
     refreshUserControls();
     refreshEngineState();
     refreshProjectState();
@@ -644,23 +627,8 @@ void MainComponent::resized()
         wavPositionSlider.setBounds(placeRow(28));
 
         dspHeader.setBounds(placeRow(24));
-        processingModeCombo.setBounds(placeRow(28));
-
-        builtinHeader.setBounds(placeRow(24));
-        builtinProcessorCombo.setBounds(placeRow(28));
-
-        for (int index = 0; index < static_cast<int>(builtinParameterLabels.size()); ++index)
-        {
-            builtinParameterLabels[static_cast<std::size_t>(index)].setBounds(placeRow(18));
-            builtinParameterSliders[static_cast<std::size_t>(index)].setBounds(placeRow(28));
-        }
-
-        auto presetRow = placeRow(30);
-        savePresetButton.setBounds(presetRow.removeFromLeft(presetRow.getWidth() / 2).reduced(2, 0));
-        loadPresetButton.setBounds(presetRow.reduced(2, 0));
-
         userHeader.setBounds(placeRow(24));
-        userModuleStatusLabel.setBounds(placeRow(72));
+        userModuleStatusLabel.setBounds(placeRow(84));
 
         controlsContent.setSize(leftPanelWidth, y + 10);
     }
@@ -675,18 +643,11 @@ void MainComponent::resized()
                  &inputRoutingLabel, &outputRoutingLabel, &preferredAudioStatusLabel, &requestedAudioStatusLabel,
                  &actualAudioStatusLabel, &overrideAudioStatusLabel, &warningAudioStatusLabel, &wavHeader,
                  &loadWavButton, &wavFileLabel, &wavLoopToggle, &wavPositionLabel, &wavPositionSlider, &dspHeader,
-                 &processingModeCombo, &builtinHeader, &builtinProcessorCombo, &savePresetButton, &loadPresetButton,
                  &userHeader, &userModuleStatusLabel
              })
         {
             component->setBounds({});
         }
-
-        for (auto& label : builtinParameterLabels)
-            label.setBounds({});
-
-        for (auto& slider : builtinParameterSliders)
-            slider.setBounds({});
 
         for (auto& combo : inputRoutingCombos)
             combo.setBounds({});
@@ -893,7 +854,6 @@ void MainComponent::timerCallback()
     }
 
     refreshEngineState();
-    refreshBuiltinControls();
     refreshUserControls();
     refreshProjectState();
     refreshCompilerState();
@@ -1136,27 +1096,6 @@ void MainComponent::configureButtonsAndCallbacks()
         audioEngine.setSourceType(static_cast<SourceType>(sourceCombo.getSelectedId() - 1));
     };
 
-    processingModeCombo.onChange = [this]
-    {
-        if (updatingUi)
-            return;
-
-        const auto mode = processingModeCombo.getSelectedId() == 2 ? ProcessingMode::userModule : ProcessingMode::builtIn;
-        audioEngine.setProcessingMode(mode);
-        refreshBuiltinControls();
-        refreshUserControls();
-    };
-
-    builtinProcessorCombo.onChange = [this]
-    {
-        if (updatingUi)
-            return;
-
-        const auto type = static_cast<BuiltinProcessorType>(builtinProcessorCombo.getSelectedId() - 1);
-        audioEngine.setBuiltinProcessorType(type);
-        refreshBuiltinControls();
-    };
-
     inputDeviceCombo.onChange = [this]
     {
         if (updatingUi)
@@ -1258,17 +1197,6 @@ void MainComponent::configureButtonsAndCallbacks()
         };
     }
 
-    for (int index = 0; index < static_cast<int>(builtinParameterSliders.size()); ++index)
-    {
-        builtinParameterSliders[static_cast<std::size_t>(index)].onValueChange = [this, index]
-        {
-            if (! updatingUi)
-                audioEngine.setBuiltinParameter(index, static_cast<float>(builtinParameterSliders[static_cast<std::size_t>(index)].getValue()));
-        };
-    }
-
-    savePresetButton.onClick = [this] { launchSavePresetChooser(); };
-    loadPresetButton.onClick = [this] { launchLoadPresetChooser(); };
     newProjectButton.onClick = [this] { promptForNewProject(); };
     openProjectButton.onClick = [this] { promptForOpenProject(); };
     saveProjectButton.onClick = [this] { saveProject(false); };
@@ -1299,17 +1227,6 @@ void MainComponent::populateCombos()
 
     sourceCombo.setSelectedId(static_cast<int>(SourceType::sine) + 1, juce::dontSendNotification);
     configureCombo(sourceCombo);
-
-    processingModeCombo.addItem("Built-in DSP", 1);
-    processingModeCombo.addItem("User DSP Module", 2);
-    processingModeCombo.setSelectedId(1, juce::dontSendNotification);
-    configureCombo(processingModeCombo);
-
-    for (const auto& descriptor : getBuiltinProcessorDescriptors())
-        builtinProcessorCombo.addItem(descriptor.name, static_cast<int>(descriptor.type) + 1);
-
-    builtinProcessorCombo.setSelectedId(static_cast<int>(BuiltinProcessorType::bypass) + 1, juce::dontSendNotification);
-    configureCombo(builtinProcessorCombo);
 }
 
 void MainComponent::refreshEngineState()
@@ -1318,8 +1235,6 @@ void MainComponent::refreshEngineState()
     updatingUi = true;
 
     sourceCombo.setSelectedId(static_cast<int>(snapshot.sourceType) + 1, juce::dontSendNotification);
-    processingModeCombo.setSelectedId(snapshot.processingMode == ProcessingMode::builtIn ? 1 : 2, juce::dontSendNotification);
-    builtinProcessorCombo.setSelectedId(static_cast<int>(snapshot.builtinProcessor) + 1, juce::dontSendNotification);
     gainSlider.setValue(snapshot.sourceGain, juce::dontSendNotification);
     frequencySlider.setValue(snapshot.sineFrequency, juce::dontSendNotification);
     wavFileLabel.setText(snapshot.wavLoaded ? snapshot.wavFileName : "No WAV loaded", juce::dontSendNotification);
@@ -1553,44 +1468,10 @@ bool MainComponent::rebuildAudioChannelButtons(const AudioEngine::Snapshot& snap
     return changed;
 }
 
-void MainComponent::refreshBuiltinControls()
-{
-    const auto descriptor = getBuiltinProcessorDescriptor(audioEngine.getBuiltinProcessorType());
-    const auto builtinModeEnabled = processingModeCombo.getSelectedId() == 1;
-
-    builtinProcessorCombo.setEnabled(builtinModeEnabled);
-    savePresetButton.setEnabled(builtinModeEnabled);
-    loadPresetButton.setEnabled(builtinModeEnabled);
-
-    updatingUi = true;
-
-    for (int index = 0; index < static_cast<int>(builtinParameterSliders.size()); ++index)
-    {
-        const auto visible = index < descriptor.parameterCount;
-        auto& label = builtinParameterLabels[static_cast<std::size_t>(index)];
-        auto& slider = builtinParameterSliders[static_cast<std::size_t>(index)];
-
-        label.setVisible(visible);
-        slider.setVisible(visible);
-        slider.setEnabled(visible && builtinModeEnabled);
-
-        if (visible)
-        {
-            const auto& spec = descriptor.parameters[static_cast<std::size_t>(index)];
-            label.setText(spec.name, juce::dontSendNotification);
-            slider.setRange(spec.minValue, spec.maxValue, 0.0001);
-            slider.setValue(audioEngine.getBuiltinParameter(index), juce::dontSendNotification);
-        }
-    }
-
-    updatingUi = false;
-}
-
 void MainComponent::refreshUserControls()
 {
     const auto snapshot = audioEngine.getUserDspHost().getSnapshot();
     const auto& controllerDefinitions = projectManager.getControllerDefinitions();
-    const auto userModeEnabled = processingModeCombo.getSelectedId() == 2;
 
     const auto layoutMatchesCompiledModule = [&]
     {
@@ -1616,7 +1497,7 @@ void MainComponent::refreshUserControls()
 
     updatingUi = true;
 
-    userHeader.setText(userModeEnabled ? "User DSP Module: " + snapshot.processorName : "User DSP Module",
+    userHeader.setText(snapshot.hasActiveModule ? "User DSP Module: " + snapshot.processorName : "User DSP Module",
                        juce::dontSendNotification);
 
     juce::String statusText;
@@ -1755,8 +1636,8 @@ void MainComponent::applyDarkTheme()
         button.setColour(juce::TextButton::textColourOnId, ide::text);
     };
 
-    for (auto* button : std::array<juce::TextButton*, 12>
-         { &startButton, &stopButton, &loadWavButton, &savePresetButton, &loadPresetButton, &newProjectButton, &openProjectButton, &saveProjectButton,
+    for (auto* button : std::array<juce::TextButton*, 10>
+         { &startButton, &stopButton, &loadWavButton, &newProjectButton, &openProjectButton, &saveProjectButton,
            &saveProjectAsButton, &showOscilloscopeButton, &showControlsButton, &toggleLeftPanelButton })
     {
         configureButton(*button);
@@ -1839,56 +1720,6 @@ void MainComponent::launchLoadWavChooser()
 
                                    if (const auto result = safeThis->audioEngine.loadWavFile(file); result.failed())
                                        safeThis->showErrorMessage("WAV Load Failed", result.getErrorMessage());
-                               });
-}
-
-void MainComponent::launchSavePresetChooser()
-{
-    auto safeThis = juce::Component::SafePointer<MainComponent>(this);
-    activeChooser = std::make_unique<juce::FileChooser>("Save built-in DSP preset", juce::File(), "*.json");
-    activeChooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-                               [safeThis] (const juce::FileChooser& chooser)
-                               {
-                                   if (safeThis == nullptr)
-                                       return;
-
-                                   auto file = chooser.getResult();
-
-                                   if (file == juce::File())
-                                       return;
-
-                                   if (file.getFileExtension().isEmpty())
-                                       file = file.withFileExtension(".json");
-
-                                   if (const auto result = safeThis->presetManager.savePreset(file, safeThis->audioEngine.captureBuiltinPreset()); result.failed())
-                                       safeThis->showErrorMessage("Preset Save Failed", result.getErrorMessage());
-                               });
-}
-
-void MainComponent::launchLoadPresetChooser()
-{
-    auto safeThis = juce::Component::SafePointer<MainComponent>(this);
-    activeChooser = std::make_unique<juce::FileChooser>("Load built-in DSP preset", juce::File(), "*.json");
-    activeChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                               [safeThis] (const juce::FileChooser& chooser)
-                               {
-                                   if (safeThis == nullptr)
-                                       return;
-
-                                   BuiltinPresetData preset;
-                                   const auto file = chooser.getResult();
-
-                                   if (! file.existsAsFile())
-                                       return;
-
-                                   if (const auto result = safeThis->presetManager.loadPreset(file, preset); result.failed())
-                                   {
-                                       safeThis->showErrorMessage("Preset Load Failed", result.getErrorMessage());
-                                       return;
-                                   }
-
-                                   safeThis->audioEngine.applyBuiltinPreset(preset);
-                                   safeThis->refreshBuiltinControls();
                                });
 }
 

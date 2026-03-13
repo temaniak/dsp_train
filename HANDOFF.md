@@ -1,81 +1,98 @@
 # HANDOFF
 
-This file is a developer handoff for the next task. It is intentionally focused on current implementation state, real entry points, and likely next steps.
+This handoff reflects the repository state after the user-DSP-only cleanup completed on 2026-03-13.
 
-## 1. Project Summary
+## 1. Product Summary
 
-`DSP Education Stand` is a JUCE standalone desktop application used as a DSP learning playground.
+`DSP Education Stand` is a JUCE standalone desktop app for learning DSP by editing C++ user projects.
 
-The project has moved beyond the original mono MVP. The current app is a project-based user DSP environment with:
+The app is now centered on one workflow:
 
-- built-in signal sources
-- built-in DSP processors
-- user DSP projects stored as `.dspedu` archives
-- real dynamic module compilation and hot reload
-- custom runtime controls for user DSP
-- audio device and channel configuration
-- preferred audio configuration reported by the DSP module
-- oscilloscope popup window
-- dark IDE-like UI
+- choose a source signal
+- edit a user DSP project
+- define runtime controls
+- compile and hot-reload the module
 
-The repository currently targets local developer builds on Windows and macOS.
-The Windows path was re-verified locally on 2026-03-13.
+Built-in DSP processors and preset management were removed from the product and from the active build.
 
-## 2. What Is Working
+## 2. What Works
 
-At a high level, the following features are already present in the codebase:
-
-- JUCE standalone application shell
-- audio engine with device selection and runtime reconfiguration
-- signal sources:
+- JUCE standalone app shell
+- source signals:
   - sine
   - white noise
   - impulse
   - WAV file
   - live hardware input
-- built-in DSP:
-  - bypass
-  - gain
-  - hard clip
-  - one-pole lowpass
-  - simple delay
-- project-based user DSP editing and compilation
-- safe hot reload with fallback to previous valid module
-- custom realtime controls:
+- project-based user DSP editing with `.dspedu` archives
+- multi-file project tree in the editor
+- compile, load, and safe hot reload of user DSP modules
+- runtime controls:
   - knobs
   - buttons
   - toggles
-- preferred audio config flow from user DSP to host
-- requested vs actual audio configuration reporting
-- stereo oscilloscope tool window
-- minimal optional tests
+- preferred audio configuration reported by the user DSP module
+- requested vs actual device configuration reporting
+- audio device selection, channel selection, and routing
+- oscilloscope popup
+- optional regression tests
 
-## 3. Current Product Direction
+## 3. New Project Baseline
 
-The app is no longer just a simple "type code in one editor and compile a DLL" demo.
+New projects now start as a minimal compile-ready project:
 
-The current direction is:
+- active file: `src/main.cpp`
+- processor class: `MyAudioProcessor`
+- no default controls
 
-- user DSP projects as the primary workflow
-- runtime controls exposed to user DSP code
-- device/channel/routing visibility in the UI
-- cross-platform local developer workflow
+The default source is a clean pass-through skeleton, not a preloaded effect example.
 
-There is still legacy code from the earlier simpler iteration in the repository, but the active direction is the project-based user DSP workflow.
+Relevant files:
 
-## 4. Build Entry Points
+- `src/userdsp/UserDspProjectUtils.*`
+- `src/userdsp/UserDspProjectManager.*`
 
-### Main CMake target
+## 4. Example Projects
 
-- Root build file: `CMakeLists.txt`
-- Main app target: `DspEducationStand`
-- Optional tests target: `DspEducationStandTests`
+Educational example projects now live in:
+
+- `example_projects/`
+- `example_project_archives/`
+
+Included examples:
+
+- `oscillator`
+- `filter`
+- `envelope`
+- `lfo`
+- `delay`
+- `simple_synth_voice`
+
+Each example is stored as an extracted `.dspedu` project:
+
+- `project.json`
+- `files/src/main.cpp`
+
+Ready-to-open `.dspedu` archives are generated into `example_project_archives/` via:
+
+- `scripts/package_example_projects.cmd`
+- `scripts/package_example_projects.ps1`
+
+Most examples demonstrate processing of an incoming signal. `simple_synth_voice` is the self-contained synthesis example.
+
+## 5. Build Entry Points
+
+### Main targets
+
+- root build file: `CMakeLists.txt`
+- app target: `DspEducationStand`
+- optional tests target: `DspEducationStandTests`
 
 ### Windows
 
-- Configure/build helper: `scripts/build_windows.cmd`
-- Configure helper: `scripts/configure_windows.cmd`
-- User DSP module build helper: `scripts/build_user_dsp.cmd`
+- app build helper: `scripts/build_windows.cmd`
+- configure helper: `scripts/configure_windows.cmd`
+- user DSP module build helper: `scripts/build_user_dsp.cmd`
 
 Requirements:
 
@@ -83,45 +100,59 @@ Requirements:
 - Ninja
 - MSVC Build Tools
 
-Typical build:
+Typical app build:
 
 ```powershell
 cmd /c scripts\build_windows.cmd build
 ```
 
-Verified on 2026-03-13:
+Default helper configuration is `Release`.
+Explicit override example:
 
-- fresh Windows configure/build succeeded with MSVC + Ninja
-- fresh optional tests configure/build succeeded
-- `DspEducationStandTests.exe` ran successfully
-- `scripts/build_user_dsp.cmd` successfully produced a `.dll` exporting `dspedu_get_api`
+```powershell
+cmd /c scripts\build_windows.cmd build Debug
+```
 
-Current helper behavior:
+Typical tests build:
 
-- `scripts/configure_windows.cmd` configures plain `Ninja` and explicitly passes `-DCMAKE_BUILD_TYPE`
-- default helper configuration is `Release`
-- optional override is supported as the second argument, for example `cmd /c scripts\build_windows.cmd build Debug`
+```powershell
+cmake -S . -B build-tests -G Ninja -DJUCE_DIR=%JUCE_DIR% -DDSP_EDU_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build-tests --target DspEducationStandTests
+```
 
 ### macOS
 
-- User DSP module build helper: `scripts/build_user_dsp.sh`
+- user DSP module build helper: `scripts/build_user_dsp.sh`
 
-README already documents the expected CMake flow for macOS.
+README documents the standard CMake flow for the app and tests.
 
-## 5. Runtime Architecture
+## 6. Verified State
+
+Re-verified locally on Windows on 2026-03-13:
+
+- fresh app configure/build succeeded
+- fresh tests configure/build succeeded
+- `DspEducationStandTests.exe` ran successfully
+- `scripts/build_user_dsp.cmd` successfully produced a `.dll` exporting `dspedu_get_api`
+
+After the user-DSP-only cleanup in this task:
+
+- a fresh Windows app build also succeeded
+- the built-in DSP path no longer exists in the active target
+
+## 7. Runtime Architecture
 
 ### Main UI
 
-Primary UI composition lives in:
+Primary UI composition:
 
 - `src/app/MainComponent.h`
 - `src/app/MainComponent.cpp`
 
-This is the central coordination layer for:
+This is the coordination layer for:
 
 - transport
 - source controls
-- built-in DSP controls
 - project actions
 - compile actions
 - device configuration
@@ -129,7 +160,7 @@ This is the central coordination layer for:
 
 ### Audio
 
-Core audio runtime:
+Core runtime:
 
 - `src/audio/AudioEngine.h`
 - `src/audio/AudioEngine.cpp`
@@ -137,18 +168,11 @@ Core audio runtime:
 - `src/audio/SignalSources.*`
 - `src/audio/WavFileSource.*`
 
-The engine handles:
-
-- source generation
-- input/output device state
-- channel configuration
-- routing
-- built-in DSP path
-- user DSP path
+The engine now always routes audio through the user DSP host.
 
 ### User DSP
 
-Main subsystem files:
+Main subsystem:
 
 - `src/userdsp/UserDspHost.*`
 - `src/userdsp/UserDspCompiler.*`
@@ -157,9 +181,10 @@ Main subsystem files:
 - `src/userdsp/UserDspControllers.h`
 - `user_dsp_sdk/UserDspApi.h`
 
-This subsystem is responsible for:
+Responsibilities:
 
 - project layout and serialization
+- controller metadata
 - staging source files for compilation
 - loading the compiled module
 - exposing runtime controls to the module
@@ -168,42 +193,26 @@ This subsystem is responsible for:
 
 ### UI Tools
 
-Related files:
-
 - `src/ui/ToolWindow.*`
 - `src/ui/RealtimeControlsComponent.*`
 - `src/ui/OscilloscopeComponent.*`
 - `src/ui/OscilloscopeBuffer.*`
 - `src/ui/DarkIdeLookAndFeel.*`
 
-These provide the dark UI, popup windows, controls window, and oscilloscope window.
+## 8. User DSP API Status
 
-## 6. User DSP API Status
+The app injects the SDK include, generated controls header, and entry wrapper automatically during staging.
 
-Important: the current user DSP workflow is not the old "single text file with manual SDK include and plugin macro" model.
-
-The current implementation stages a project and injects the SDK/include/entry wrapper automatically.
-
-The current API is based around:
+Current API:
 
 - `getPreferredAudioConfig(...)`
 - `prepare(const DspEduProcessSpec&)`
 - `reset()`
 - `process(const float* const* inputs, float* const* outputs, int numInputChannels, int numOutputChannels, int numSamples)`
 
-The controls system exposes generated fields under `controls.<name>`.
+Runtime controls are exposed as generated fields under `controls.<name>`.
 
-Examples from the current direction:
-
-- `controls.driveKnob`
-- `controls.fireButton`
-- `controls.bypassToggle`
-
-Do not assume the earlier simpler macro-based workflow is still the main path. There are remnants from the earlier iteration in the repository, but the project has already evolved beyond that.
-
-## 7. Important Current Files
-
-Use these first when continuing work:
+## 9. Important Files To Read First
 
 - `CMakeLists.txt`
 - `README.md`
@@ -215,65 +224,29 @@ Use these first when continuing work:
 - `src/userdsp/UserDspProjectManager.*`
 - `src/userdsp/UserDspProjectUtils.*`
 - `src/ui/RealtimeControlsComponent.*`
+- `example_projects/README.md`
+- `example_project_archives/`
 - `user_dsp_sdk/UserDspApi.h`
 
-## 8. Likely Legacy / Stale Files
+## 10. Files Removed In This Cleanup
 
-These files still exist in the tree but are not part of the current main target in `CMakeLists.txt`:
+These were removed from the repo because they represented the old built-in DSP path or stale starter flow:
 
-- `src/userdsp/UserCodeDocumentManager.h`
-- `src/userdsp/UserCodeDocumentManager.cpp`
+- `src/dsp/BuiltinProcessors.*`
+- `src/presets/PresetManager.*`
+- `src/userdsp/UserCodeDocumentManager.*`
+- `templates/UserDspTemplate.cpp`
 
-They appear to belong to an earlier simpler editor flow. Treat them carefully before using them as a source of truth.
+## 11. Current Risks / Follow-Ups
 
-If future cleanup happens, verify whether they should be removed or merged into the project-based workflow.
+- The Windows app build is verified after cleanup, but the educational examples still deserve individual compile smoke tests in a future pass.
+- There is still a benign warning in `src/ui/ToolWindow.cpp` about `parentComponent` shadowing a JUCE member.
 
-Also note:
+## 12. Short Continuation Summary
 
-- older existing build directories may still contain stale references to these legacy files
-- a clean reconfigure follows the current `CMakeLists.txt` source list
+If another task picks this up cold, the right mental model is:
 
-## 9. Documentation Notes
-
-- `README.md` is currently the main user-facing project description.
-- In raw Windows terminal output, the Russian section may look garbled because of code page issues. That is a terminal rendering issue, not necessarily a content issue in editors/GitHub.
-- The Windows helper scripts now default to a `Release` build with plain Ninja and accept an optional explicit build type as the second argument.
-
-## 10. Open Technical Directions
-
-The current `TODO.md` points at these next directions:
-
-1. Remove or de-emphasize built-in DSP so that user DSP projects become the primary focus.
-2. Add MIDI input, MIDI learn, and MIDI-to-control mapping.
-3. Rework the left-side menu and reduce UI noise.
-4. Improve the new-project onboarding flow.
-5. Add more educational example projects.
-
-These are good candidates for the next task.
-
-## 11. Suggested First Checks For The Next Task
-
-Before making changes in the next task:
-
-1. Start from `CMakeLists.txt` to confirm which files are actually compiled.
-2. Read `MainComponent`, `AudioEngine`, and `UserDspProjectManager` before changing workflow.
-3. Treat `README.md` as product-level intent and `TODO.md` as active direction.
-4. Verify whether a file is actively wired into the build before refactoring it.
-
-## 12. Local Repository State
-
-At the time of writing:
-
-- this workspace is a git repository
-- the project is oriented around local developer builds
-- a clean Windows app build, clean Windows tests build, and Windows user DSP module build path were all re-verified on 2026-03-13
-- there is no assumption here of packaged, signed, or notarized distribution
-
-## 13. Short Continuation Summary
-
-If another task picks this up cold, the correct mental model is:
-
-- this is a JUCE-based DSP playground
-- the app already supports project-based user DSP compilation
-- runtime controls and preferred audio config are already part of the design
-- the main continuation work is product refinement, workflow cleanup, and additional input/control systems such as MIDI
+- the app is now user-DSP-only
+- new projects should stay minimal and uncluttered
+- educational example projects live in `example_projects/`
+- future work is around onboarding, examples, archive/import UX, and higher-level control/input systems such as MIDI

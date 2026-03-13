@@ -5,28 +5,24 @@
 
 namespace
 {
-const char* defaultProcessorClassName = "ExampleUserProcessor";
+const char* defaultProcessorClassName = "MyAudioProcessor";
 
-const char* defaultTemplateText = R"CPP(#include <algorithm>
-#include <cmath>
-
-// UserDspApi.h, the generated controls header, and the plugin entry wrapper
+const char* defaultTemplateText = R"CPP(// UserDspApi.h, the generated controls header, and the entry wrapper
 // are injected automatically by the application.
-// This starter project already contains example controls.
-// Open the Controls window and use values via controls.<codeName>.
+//
+// Start by editing this class and pressing Compile.
+// Add runtime controls from the Controls window when you need them.
 
-class ExampleUserProcessor
+class MyAudioProcessor
 {
 public:
     const char* getName() const
     {
-        return "Drive Lab Example";
+        return "New User DSP Project";
     }
 
     bool getPreferredAudioConfig(DspEduPreferredAudioConfig& config) const
     {
-        config.preferredSampleRate = 48000.0;
-        config.preferredBlockSize = 256;
         config.preferredInputChannels = 2;
         config.preferredOutputChannels = 2;
         return true;
@@ -34,15 +30,7 @@ public:
 
     void prepare(const DspEduProcessSpec& spec)
     {
-        sampleRate = std::max(1.0, spec.sampleRate);
-        reset();
-    }
-
-    void reset()
-    {
-        filterState[0] = 0.0f;
-        filterState[1] = 0.0f;
-        exciteEnvelope = 0.0f;
+        sampleRate = spec.sampleRate;
     }
 
     void process(const float* const* inputs,
@@ -51,69 +39,33 @@ public:
                  int numOutputChannels,
                  int numSamples)
     {
-        if (numOutputChannels <= 0 || outputs == nullptr || outputs[0] == nullptr)
-            return;
-
-        const auto drive = remap01(controls.driveKnob, 1.0f, 14.0f);
-        const auto toneHz = remap01(controls.toneKnob, 250.0f, 8000.0f);
-        const auto mix = controls.mixKnob;
-        const auto exciteTarget = controls.exciteButton ? 1.0f : 0.0f;
-        const auto alpha = computeLowpassAlpha(toneHz);
-        const auto* inputLeft = numInputChannels > 0 && inputs != nullptr ? inputs[0] : nullptr;
-        const auto* inputRight = numInputChannels > 1 && inputs != nullptr ? inputs[1] : inputLeft;
-        auto* outputLeft = outputs[0];
-        auto* outputRight = numOutputChannels > 1 ? outputs[1] : outputs[0];
-
-        for (int sample = 0; sample < numSamples; ++sample)
+        for (int channel = 0; channel < numOutputChannels; ++channel)
         {
-            const auto dryLeft = inputLeft != nullptr ? inputLeft[sample] : 0.0f;
-            const auto dryRight = inputRight != nullptr ? inputRight[sample] : dryLeft;
+            auto* output = outputs[channel];
 
-            if (controls.bypassToggle)
-            {
-                outputLeft[sample] = dryLeft;
-
-                if (numOutputChannels > 1 && outputRight != nullptr)
-                    outputRight[sample] = dryRight;
-
+            if (output == nullptr)
                 continue;
-            }
 
-            exciteEnvelope += 0.18f * (exciteTarget - exciteEnvelope);
-            const auto excitedLeft = dryLeft + 0.22f * exciteEnvelope;
-            const auto excitedRight = dryRight + 0.22f * exciteEnvelope;
-            const auto drivenLeft = std::tanh(excitedLeft * drive);
-            const auto drivenRight = std::tanh(excitedRight * drive);
-            filterState[0] += alpha * (drivenLeft - filterState[0]);
-            filterState[1] += alpha * (drivenRight - filterState[1]);
-            const auto wetLeft = dryLeft + mix * (filterState[0] - dryLeft);
-            const auto wetRight = dryRight + mix * (filterState[1] - dryRight);
-            outputLeft[sample] = wetLeft;
+            const auto* input = getInputChannel(inputs, numInputChannels, channel);
 
-            if (numOutputChannels > 1 && outputRight != nullptr)
-                outputRight[sample] = wetRight;
-
-            exciteEnvelope *= 0.995f;
+            for (int sample = 0; sample < numSamples; ++sample)
+                output[sample] = input != nullptr ? input[sample] : 0.0f;
         }
     }
 
 private:
-    float remap01(float value, float minimum, float maximum) const
+    const float* getInputChannel(const float* const* inputs, int numInputChannels, int channel) const
     {
-        const auto clamped = std::clamp(value, 0.0f, 1.0f);
-        return minimum + (maximum - minimum) * clamped;
-    }
+        if (inputs == nullptr || numInputChannels <= 0)
+            return nullptr;
 
-    float computeLowpassAlpha(float cutoffHz) const
-    {
-        const auto clampedCutoff = std::clamp(cutoffHz, 20.0f, 0.45f * static_cast<float>(sampleRate));
-        const auto x = std::exp(-2.0f * 3.14159265358979323846f * clampedCutoff / static_cast<float>(sampleRate));
-        return 1.0f - x;
+        if (channel < numInputChannels && inputs[channel] != nullptr)
+            return inputs[channel];
+
+        return inputs[0];
     }
 
     double sampleRate = 44100.0;
-    float filterState[2] { 0.0f, 0.0f };
-    float exciteEnvelope = 0.0f;
 };
 )CPP";
 
@@ -248,14 +200,7 @@ juce::String getDefaultTemplateSource()
 
 std::vector<UserDspControllerDefinition> getDefaultTemplateControllers()
 {
-    return
-    {
-        { UserDspControllerType::knob,   "Drive",   "driveKnob" },
-        { UserDspControllerType::knob,   "Tone",    "toneKnob" },
-        { UserDspControllerType::knob,   "Mix",     "mixKnob" },
-        { UserDspControllerType::button, "Excite",  "exciteButton" },
-        { UserDspControllerType::toggle, "Bypass",  "bypassToggle" }
-    };
+    return {};
 }
 
 juce::String scrubSourceForValidation(const juce::String& sourceCode)

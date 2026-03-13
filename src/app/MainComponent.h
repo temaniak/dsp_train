@@ -3,7 +3,6 @@
 #include <JuceHeader.h>
 
 #include "audio/AudioEngine.h"
-#include "presets/PresetManager.h"
 #include "ui/DarkIdeLookAndFeel.h"
 #include "userdsp/UserDspCompiler.h"
 #include "userdsp/UserDspProjectManager.h"
@@ -30,7 +29,6 @@ private:
     void configureButtonsAndCallbacks();
     void populateCombos();
     void refreshEngineState();
-    void refreshBuiltinControls();
     void refreshAudioDeviceControls();
     void refreshUserControls();
     void refreshCompilerState();
@@ -41,8 +39,6 @@ private:
     void applyCodeEditorAppearance();
     void updatePanelAnimation();
     void launchLoadWavChooser();
-    void launchSavePresetChooser();
-    void launchLoadPresetChooser();
     void saveProject(bool forceSaveAs, std::function<void(bool)> completion = {});
     void confirmProjectTransition(const juce::String& actionName, std::function<void(bool)> completion);
     void promptForNewProject();
@@ -93,7 +89,6 @@ private:
     friend class SidePanelResizeBar;
 
     AudioEngine audioEngine;
-    PresetManager presetManager;
     UserDspProjectManager projectManager;
     UserDspCompiler compiler;
     juce::CodeEditorComponent codeEditor;
@@ -102,7 +97,6 @@ private:
     juce::Label transportHeader;
     juce::Label wavHeader;
     juce::Label dspHeader;
-    juce::Label builtinHeader;
     juce::Label deviceHeader;
     juce::Label userHeader;
     juce::Label toolsHeader;
@@ -146,13 +140,6 @@ private:
     juce::Slider wavPositionSlider;
     juce::Label wavPositionLabel;
 
-    juce::ComboBox processingModeCombo;
-    juce::ComboBox builtinProcessorCombo;
-    juce::TextButton savePresetButton { "Save Preset" };
-    juce::TextButton loadPresetButton { "Load Preset" };
-
-    std::array<juce::Label, 4> builtinParameterLabels;
-    std::array<juce::Slider, 4> builtinParameterSliders;
     juce::Label userModuleStatusLabel;
 
     juce::TextButton newProjectButton { "New Project" };

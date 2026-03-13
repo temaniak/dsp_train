@@ -1,0 +1,65 @@
+{
+  "version": 3,
+  "projectName": "Envelope Basics",
+  "processorClass": "EnvelopeExampleProcessor",
+  "activeFilePath": "src/main.cpp",
+  "controllers": [
+    { "type": "button", "label": "Trigger", "codeName": "triggerButton" },
+    { "type": "knob", "label": "Decay", "codeName": "decayKnob" },
+    { "type": "knob", "label": "Envelope Amount", "codeName": "amountKnob" },
+    { "type": "knob", "label": "Dry Level", "codeName": "dryKnob" }
+  ],
+  "audioState": {
+    "preferred": {
+      "valid": true,
+      "sampleRate": 48000,
+      "blockSize": 256,
+      "inputChannels": 2,
+      "outputChannels": 2
+    },
+    "overrides": {
+      "sampleRateOverridden": false,
+      "blockSizeOverridden": false,
+      "inputDeviceOverridden": false,
+      "outputDeviceOverridden": false,
+      "inputChannelsOverridden": false,
+      "outputChannelsOverridden": false,
+      "routingOverridden": false,
+      "sampleRate": 0,
+      "blockSize": 0
+    },
+    "selection": {
+      "inputDeviceName": "",
+      "outputDeviceName": "",
+      "enabledInputChannels": [],
+      "enabledOutputChannels": [],
+      "inputRouting": [0, 1],
+      "outputRouting": [0, 1]
+    },
+    "lastKnownActual": {
+      "inputDeviceName": "",
+      "outputDeviceName": "",
+      "sampleRate": 0,
+      "blockSize": 0,
+      "activeInputChannels": 0,
+      "activeOutputChannels": 0
+    }
+  },
+  "tree": {
+    "name": "",
+    "type": "folder",
+    "children": [
+      {
+        "name": "src",
+        "type": "folder",
+        "children": [
+          {
+            "name": "main.cpp",
+            "type": "file",
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}
