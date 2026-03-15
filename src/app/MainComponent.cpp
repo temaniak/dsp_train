@@ -48,13 +48,6 @@ void configureStatusLabel(juce::Label& label)
     label.setBorderSize(juce::BorderSize<int>(0, 8, 0, 8));
 }
 
-void configureChannelToggleButton(juce::ToggleButton& button)
-{
-    button.setColour(juce::ToggleButton::textColourId, ide::text);
-    button.setColour(juce::ToggleButton::tickColourId, ide::constant);
-    button.setColour(juce::ToggleButton::tickDisabledColourId, ide::textMuted);
-}
-
 void configureAlertWindowLookAndFeel(juce::AlertWindow& window, juce::LookAndFeel* lookAndFeel)
 {
     if (lookAndFeel != nullptr)
@@ -79,6 +72,7 @@ void configureAlertComboBox(juce::ComboBox* combo)
     if (combo == nullptr)
         return;
 
+    combo->setScrollWheelEnabled(false);
     combo->setColour(juce::ComboBox::backgroundColourId, ide::active);
     combo->setColour(juce::ComboBox::textColourId, ide::text);
     combo->setColour(juce::ComboBox::outlineColourId, ide::border);
@@ -275,8 +269,6 @@ MainComponent::MainComponent()
     configureBodyLabel(outputDeviceLabel, "Output Device");
     configureBodyLabel(sampleRateLabel, "Sample Rate");
     configureBodyLabel(blockSizeLabel, "Block Size");
-    configureBodyLabel(inputChannelsLabel, "Input Channels");
-    configureBodyLabel(outputChannelsLabel, "Output Channels");
     configureBodyLabel(inputRoutingLabel, "Input Routing");
     configureBodyLabel(outputRoutingLabel, "Output Routing");
     configureBodyLabel(wavPositionLabel, "Position");
@@ -311,12 +303,14 @@ MainComponent::MainComponent()
     codeFontSizeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     codeFontSizeSlider.setRange(12.0, 24.0, 1.0);
     codeFontSizeSlider.setValue(codeFontSize, juce::dontSendNotification);
+    codeFontSizeSlider.setScrollWheelEnabled(false);
     codeFontSizeSlider.setColour(juce::Slider::trackColourId, ide::border.brighter(0.15f));
     codeFontSizeSlider.setColour(juce::Slider::thumbColourId, ide::constant);
     codeFontSizeSlider.setColour(juce::Slider::backgroundColourId, ide::active);
 
     auto configureCombo = [] (juce::ComboBox& combo)
     {
+        combo.setScrollWheelEnabled(false);
         combo.setColour(juce::ComboBox::backgroundColourId, ide::panel);
         combo.setColour(juce::ComboBox::textColourId, ide::text);
         combo.setColour(juce::ComboBox::outlineColourId, ide::border);
@@ -353,7 +347,7 @@ MainComponent::MainComponent()
     projectTreeView.setDefaultOpenness(true);
     projectTreeView.setIndentSize(16);
     projectTreeView.setOpenCloseButtonsVisible(true);
-    controlsViewport.setViewedComponent(&controlsContent, false);
+    controlsViewport.setViewedComponentWithMouseWheelPassthrough(&controlsContent, false);
     controlsViewport.setScrollBarsShown(true, false);
     controlsViewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
 
@@ -376,7 +370,7 @@ MainComponent::MainComponent()
              &sourceHeader, &transportHeader, &deviceHeader, &wavHeader, &dspHeader, &userHeader, &toolsHeader, &editorHeader, &navigatorHeader,
              &logHeader, &projectPathLabel, &codeFontSizeLabel, &codeFontSizeValueLabel, &sourceCombo, &startButton, &stopButton,
              &gainLabel, &gainSlider, &frequencyLabel, &frequencySlider, &inputDeviceLabel, &outputDeviceLabel, &sampleRateLabel, &blockSizeLabel,
-             &inputChannelsLabel, &outputChannelsLabel, &inputRoutingLabel, &outputRoutingLabel, &inputDeviceCombo, &outputDeviceCombo,
+             &inputRoutingLabel, &outputRoutingLabel, &inputDeviceCombo, &outputDeviceCombo,
              &sampleRateCombo, &blockSizeCombo, &preferredAudioStatusLabel, &requestedAudioStatusLabel, &actualAudioStatusLabel, &overrideAudioStatusLabel,
              &warningAudioStatusLabel, &loadWavButton,
              &wavFileLabel, &wavLoopToggle, &wavPositionLabel, &wavPositionSlider, &newProjectButton, &openProjectButton, &saveProjectButton, &saveProjectAsButton,
@@ -388,7 +382,7 @@ MainComponent::MainComponent()
             || component == &deviceHeader || component == &userHeader || component == &toolsHeader || component == &sourceCombo
             || component == &startButton || component == &stopButton || component == &gainLabel || component == &gainSlider
             || component == &frequencyLabel || component == &frequencySlider || component == &inputDeviceLabel || component == &outputDeviceLabel
-            || component == &sampleRateLabel || component == &blockSizeLabel || component == &inputChannelsLabel || component == &outputChannelsLabel
+            || component == &sampleRateLabel || component == &blockSizeLabel
             || component == &inputRoutingLabel || component == &outputRoutingLabel || component == &inputDeviceCombo || component == &outputDeviceCombo
             || component == &sampleRateCombo || component == &blockSizeCombo || component == &preferredAudioStatusLabel
             || component == &requestedAudioStatusLabel || component == &actualAudioStatusLabel || component == &overrideAudioStatusLabel
@@ -549,44 +543,6 @@ void MainComponent::resized()
         overrideAudioStatusLabel.setBounds(placeRow(40));
         warningAudioStatusLabel.setBounds(placeRow(52));
 
-        inputChannelsLabel.setBounds(placeRow(18));
-        if (inputChannelButtons.isEmpty())
-        {
-            y += 4;
-        }
-        else
-        {
-            auto buttonRow = juce::Rectangle<int>(x, y, contentWidth, 24);
-            const auto buttonWidth = juce::jmax(96, (contentWidth - 4) / juce::jmax(inputChannelButtons.size(), 1));
-
-            for (int index = 0; index < inputChannelButtons.size(); ++index)
-            {
-                auto* button = inputChannelButtons[index];
-                button->setBounds(buttonRow.removeFromLeft(buttonWidth).reduced(2, 0));
-            }
-
-            y += 30;
-        }
-
-        outputChannelsLabel.setBounds(placeRow(18));
-        if (outputChannelButtons.isEmpty())
-        {
-            y += 4;
-        }
-        else
-        {
-            auto buttonRow = juce::Rectangle<int>(x, y, contentWidth, 24);
-            const auto buttonWidth = juce::jmax(96, (contentWidth - 4) / juce::jmax(outputChannelButtons.size(), 1));
-
-            for (int index = 0; index < outputChannelButtons.size(); ++index)
-            {
-                auto* button = outputChannelButtons[index];
-                button->setBounds(buttonRow.removeFromLeft(buttonWidth).reduced(2, 0));
-            }
-
-            y += 30;
-        }
-
         inputRoutingLabel.setBounds(placeRow(18));
         for (int index = 0; index < DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS; ++index)
         {
@@ -639,7 +595,7 @@ void MainComponent::resized()
                  &sourceHeader, &sourceCombo, &transportHeader, &startButton, &stopButton, &toolsHeader,
                  &showOscilloscopeButton, &showControlsButton, &gainLabel, &gainSlider, &frequencyLabel, &frequencySlider,
                  &deviceHeader, &inputDeviceLabel, &inputDeviceCombo, &outputDeviceLabel, &outputDeviceCombo,
-                 &sampleRateLabel, &sampleRateCombo, &blockSizeLabel, &blockSizeCombo, &inputChannelsLabel, &outputChannelsLabel,
+                 &sampleRateLabel, &sampleRateCombo, &blockSizeLabel, &blockSizeCombo,
                  &inputRoutingLabel, &outputRoutingLabel, &preferredAudioStatusLabel, &requestedAudioStatusLabel,
                  &actualAudioStatusLabel, &overrideAudioStatusLabel, &warningAudioStatusLabel, &wavHeader,
                  &loadWavButton, &wavFileLabel, &wavLoopToggle, &wavPositionLabel, &wavPositionSlider, &dspHeader,
@@ -654,12 +610,6 @@ void MainComponent::resized()
 
         for (auto& combo : outputRoutingCombos)
             combo.setBounds({});
-
-        for (auto* button : inputChannelButtons)
-            button->setBounds({});
-
-        for (auto* button : outputChannelButtons)
-            button->setBounds({});
 
         controlsContent.setSize(juce::jmax(leftPanelWidth, 1), juce::jmax(leftPanelHeight, 1));
     }
@@ -1051,6 +1001,7 @@ void MainComponent::configureSlider(juce::Slider& slider,
     slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 82, 22);
     slider.setRange(minValue, maxValue, step);
     slider.setTextValueSuffix(suffix);
+    slider.setScrollWheelEnabled(false);
     slider.setColour(juce::Slider::textBoxTextColourId, ide::text);
     slider.setColour(juce::Slider::textBoxBackgroundColourId, ide::active);
     slider.setColour(juce::Slider::textBoxOutlineColourId, ide::border);
@@ -1214,6 +1165,7 @@ void MainComponent::populateCombos()
 {
     auto configureCombo = [] (juce::ComboBox& combo)
     {
+        combo.setScrollWheelEnabled(false);
         combo.setColour(juce::ComboBox::backgroundColourId, ide::panel);
         combo.setColour(juce::ComboBox::textColourId, ide::text);
         combo.setColour(juce::ComboBox::outlineColourId, ide::border);
@@ -1256,7 +1208,6 @@ void MainComponent::refreshEngineState()
 void MainComponent::refreshAudioDeviceControls()
 {
     const auto snapshot = audioEngine.getSnapshot();
-    const auto buttonLayoutChanged = rebuildAudioChannelButtons(snapshot);
     bool comboVisibilityChanged = false;
     updatingUi = true;
 
@@ -1305,21 +1256,6 @@ void MainComponent::refreshAudioDeviceControls()
     blockSizeCombo.setSelectedId(snapshot.requestedBlockSize, juce::dontSendNotification);
     blockSizeCombo.setEnabled(blockSizeCombo.getNumItems() > 0);
 
-    auto updateChannelButtonStates = [] (juce::OwnedArray<juce::ToggleButton>& buttons,
-                                         const std::vector<int>& enabledChannels)
-    {
-        for (int index = 0; index < buttons.size(); ++index)
-        {
-            const auto isEnabled = std::find(enabledChannels.begin(), enabledChannels.end(), index) != enabledChannels.end();
-            buttons[index]->setToggleState(isEnabled, juce::dontSendNotification);
-        }
-    };
-
-    updateChannelButtonStates(inputChannelButtons, snapshot.enabledInputChannels);
-    updateChannelButtonStates(outputChannelButtons, snapshot.enabledOutputChannels);
-
-    inputChannelsLabel.setVisible(! inputChannelButtons.isEmpty());
-    outputChannelsLabel.setVisible(! outputChannelButtons.isEmpty());
     inputRoutingLabel.setVisible(snapshot.requestedInputChannels > 0);
     outputRoutingLabel.setVisible(snapshot.requestedOutputChannels > 0);
 
@@ -1334,9 +1270,9 @@ void MainComponent::refreshAudioDeviceControls()
         const auto inputNoneId = 1000 + index + 1;
         inputCombo.addItem("DSP In " + juce::String(index + 1) + " <- none", inputNoneId);
 
-        for (const auto physicalIndex : snapshot.enabledInputChannels)
+        for (int physicalIndex = 0; physicalIndex < snapshot.inputChannelNames.size(); ++physicalIndex)
         {
-            const auto name = juce::isPositiveAndBelow(physicalIndex, snapshot.inputChannelNames.size())
+            const auto name = snapshot.inputChannelNames[physicalIndex].isNotEmpty()
                             ? snapshot.inputChannelNames[physicalIndex]
                             : ("Input " + juce::String(physicalIndex + 1));
             inputCombo.addItem("DSP In " + juce::String(index + 1) + " <- " + name, physicalIndex + 1);
@@ -1355,9 +1291,9 @@ void MainComponent::refreshAudioDeviceControls()
         const auto outputNoneId = 2000 + index + 1;
         outputCombo.addItem("DSP Out " + juce::String(index + 1) + " -> none", outputNoneId);
 
-        for (const auto physicalIndex : snapshot.enabledOutputChannels)
+        for (int physicalIndex = 0; physicalIndex < snapshot.outputChannelNames.size(); ++physicalIndex)
         {
-            const auto name = juce::isPositiveAndBelow(physicalIndex, snapshot.outputChannelNames.size())
+            const auto name = snapshot.outputChannelNames[physicalIndex].isNotEmpty()
                             ? snapshot.outputChannelNames[physicalIndex]
                             : ("Output " + juce::String(physicalIndex + 1));
             outputCombo.addItem("DSP Out " + juce::String(index + 1) + " -> " + name, physicalIndex + 1);
@@ -1378,94 +1314,8 @@ void MainComponent::refreshAudioDeviceControls()
     outputDeviceCombo.setEnabled(outputDeviceCombo.getNumItems() > 0);
     updatingUi = false;
 
-    if ((buttonLayoutChanged || comboVisibilityChanged) && controlsViewport.getWidth() > 0 && controlsViewport.getHeight() > 0)
+    if (comboVisibilityChanged && controlsViewport.getWidth() > 0 && controlsViewport.getHeight() > 0)
         resized();
-}
-
-bool MainComponent::rebuildAudioChannelButtons(const AudioEngine::Snapshot& snapshot)
-{
-    auto changed = false;
-
-    auto needsRebuild = [] (const juce::OwnedArray<juce::ToggleButton>& buttons,
-                            const juce::StringArray& channelNames,
-                            const juce::String& prefix)
-    {
-        if (buttons.size() != channelNames.size())
-            return true;
-
-        for (int index = 0; index < buttons.size(); ++index)
-        {
-            const auto expectedText = prefix + " " + juce::String(index + 1)
-                                    + (channelNames[index].isNotEmpty() ? ": " + channelNames[index] : juce::String());
-
-            if (buttons[index]->getButtonText() != expectedText)
-                return true;
-        }
-
-        return false;
-    };
-
-    auto rebuildButtons = [this] (juce::OwnedArray<juce::ToggleButton>& buttons,
-                                  const juce::StringArray& channelNames,
-                                  const juce::String& prefix,
-                                  bool isInput)
-    {
-        buttons.clear(true);
-
-        for (int index = 0; index < channelNames.size(); ++index)
-        {
-            auto* button = buttons.add(new juce::ToggleButton(prefix + " " + juce::String(index + 1)
-                                                              + (channelNames[index].isNotEmpty() ? ": " + channelNames[index] : juce::String())));
-            configureChannelToggleButton(*button);
-            controlsContent.addAndMakeVisible(button);
-
-            button->onClick = [this, isInput]
-            {
-                if (updatingUi)
-                    return;
-
-                const auto buildEnabledChannels = [] (const juce::OwnedArray<juce::ToggleButton>& buttonArray)
-                {
-                    std::vector<int> result;
-                    result.reserve(static_cast<std::size_t>(buttonArray.size()));
-
-                    for (int buttonIndex = 0; buttonIndex < buttonArray.size(); ++buttonIndex)
-                        if (buttonArray[buttonIndex]->getToggleState())
-                            result.push_back(buttonIndex);
-
-                    return result;
-                };
-
-                updateProjectAudioState([this, isInput, buildEnabledChannels] (ProjectAudioState& state)
-                {
-                    if (isInput)
-                    {
-                        state.deviceSelection.enabledInputChannels = buildEnabledChannels(inputChannelButtons);
-                        state.overrides.inputChannelsOverridden = true;
-                    }
-                    else
-                    {
-                        state.deviceSelection.enabledOutputChannels = buildEnabledChannels(outputChannelButtons);
-                        state.overrides.outputChannelsOverridden = true;
-                    }
-                });
-            };
-        }
-    };
-
-    if (needsRebuild(inputChannelButtons, snapshot.inputChannelNames, "Input"))
-    {
-        rebuildButtons(inputChannelButtons, snapshot.inputChannelNames, "Input", true);
-        changed = true;
-    }
-
-    if (needsRebuild(outputChannelButtons, snapshot.outputChannelNames, "Output"))
-    {
-        rebuildButtons(outputChannelButtons, snapshot.outputChannelNames, "Output", false);
-        changed = true;
-    }
-
-    return changed;
 }
 
 void MainComponent::refreshUserControls()

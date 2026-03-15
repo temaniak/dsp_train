@@ -4,6 +4,7 @@
 
 #include "audio/AudioEngine.h"
 #include "ui/DarkIdeLookAndFeel.h"
+#include "ui/ScrollPassthroughControls.h"
 #include "userdsp/UserDspCompiler.h"
 #include "userdsp/UserDspProjectManager.h"
 
@@ -62,7 +63,6 @@ private:
     void ensureOscilloscopeWindow();
     void ensureControlsWindow();
     void applyCurrentProjectAudioState();
-    bool rebuildAudioChannelButtons(const AudioEngine::Snapshot& snapshot);
     void updateProjectAudioState(const std::function<void(ProjectAudioState&)>& mutator);
     void setToolWindowRefreshSuspended(bool shouldSuspend);
     bool pauseRefreshTimer();
@@ -107,19 +107,17 @@ private:
     juce::Label codeFontSizeLabel;
     juce::Label codeFontSizeValueLabel;
 
-    juce::ComboBox sourceCombo;
+    ScrollPassthroughComboBox sourceCombo;
     juce::TextButton startButton { "Start Audio" };
     juce::TextButton stopButton { "Stop Audio" };
-    juce::Slider gainSlider;
-    juce::Slider frequencySlider;
+    ScrollPassthroughSlider gainSlider;
+    ScrollPassthroughSlider frequencySlider;
     juce::Label gainLabel;
     juce::Label frequencyLabel;
     juce::Label inputDeviceLabel;
     juce::Label outputDeviceLabel;
     juce::Label sampleRateLabel;
     juce::Label blockSizeLabel;
-    juce::Label inputChannelsLabel;
-    juce::Label outputChannelsLabel;
     juce::Label inputRoutingLabel;
     juce::Label outputRoutingLabel;
     juce::Label preferredAudioStatusLabel;
@@ -127,17 +125,17 @@ private:
     juce::Label actualAudioStatusLabel;
     juce::Label overrideAudioStatusLabel;
     juce::Label warningAudioStatusLabel;
-    juce::ComboBox inputDeviceCombo;
-    juce::ComboBox outputDeviceCombo;
-    juce::ComboBox sampleRateCombo;
-    juce::ComboBox blockSizeCombo;
-    std::array<juce::ComboBox, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> inputRoutingCombos;
-    std::array<juce::ComboBox, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> outputRoutingCombos;
+    ScrollPassthroughComboBox inputDeviceCombo;
+    ScrollPassthroughComboBox outputDeviceCombo;
+    ScrollPassthroughComboBox sampleRateCombo;
+    ScrollPassthroughComboBox blockSizeCombo;
+    std::array<ScrollPassthroughComboBox, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> inputRoutingCombos;
+    std::array<ScrollPassthroughComboBox, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> outputRoutingCombos;
 
     juce::TextButton loadWavButton { "Load WAV" };
     juce::Label wavFileLabel;
     juce::ToggleButton wavLoopToggle { "Loop" };
-    juce::Slider wavPositionSlider;
+    ScrollPassthroughSlider wavPositionSlider;
     juce::Label wavPositionLabel;
 
     juce::Label userModuleStatusLabel;
@@ -151,7 +149,7 @@ private:
     juce::TextButton showControlsButton { "Controls" };
     juce::TextButton toggleLeftPanelButton { "<" };
     juce::TextButton toggleNavigatorButton { ">" };
-    juce::Slider codeFontSizeSlider;
+    ScrollPassthroughSlider codeFontSizeSlider;
     juce::Label processorClassLabel;
     juce::TextEditor processorClassEditor;
     juce::Label compileStatusLabel;
@@ -159,7 +157,7 @@ private:
     juce::TreeView projectTreeView;
 
     juce::Component controlsPanel;
-    juce::Viewport controlsViewport;
+    ScrollPassthroughViewport controlsViewport;
     juce::Component controlsContent;
     juce::Component leftPanelToggleStrip;
     juce::Component editorToolbarPanel;
@@ -178,8 +176,6 @@ private:
     std::unique_ptr<ToolWindow> oscilloscopeWindow;
     std::unique_ptr<ToolWindow> controlsWindow;
     std::unique_ptr<ide::DarkIdeLookAndFeel> ideLookAndFeel;
-    juce::OwnedArray<juce::ToggleButton> inputChannelButtons;
-    juce::OwnedArray<juce::ToggleButton> outputChannelButtons;
     int lastSeenUserModuleGeneration = 0;
     juce::String navigatorSelectionPath;
     float codeFontSize = 17.0f;

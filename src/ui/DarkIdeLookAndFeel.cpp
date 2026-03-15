@@ -1,7 +1,27 @@
 #include "ui/DarkIdeLookAndFeel.h"
+#include "ui/ScrollPassthroughControls.h"
 
 namespace ide
 {
+namespace
+{
+class ScrollPassthroughLabel final : public juce::Label
+{
+public:
+    ScrollPassthroughLabel() : juce::Label({}, {}) {}
+
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
+    {
+        scroll_passthrough::ignoreMouseWheel(event, wheel);
+    }
+
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return createIgnoredAccessibilityHandler(*this);
+    }
+};
+} // namespace
+
 DarkIdeLookAndFeel::DarkIdeLookAndFeel()
 {
     auto scheme = juce::LookAndFeel_V4::getDarkColourScheme();
@@ -107,6 +127,11 @@ void DarkIdeLookAndFeel::drawComboBox(juce::Graphics& g,
     g.strokePath(arrow, juce::PathStrokeType(1.5f));
 }
 
+juce::Label* DarkIdeLookAndFeel::createComboBoxTextBox(juce::ComboBox&)
+{
+    return new ScrollPassthroughLabel();
+}
+
 void DarkIdeLookAndFeel::drawPopupMenuItem(juce::Graphics& g,
                                            const juce::Rectangle<int>& area,
                                            bool isSeparator,
@@ -198,6 +223,29 @@ void DarkIdeLookAndFeel::drawRotarySlider(juce::Graphics& g,
 
     g.setColour(active.brighter(0.06f));
     g.fillEllipse(centre.x - radius * 0.10f, centre.y - radius * 0.10f, radius * 0.20f, radius * 0.20f);
+}
+
+juce::Label* DarkIdeLookAndFeel::createSliderTextBox(juce::Slider& slider)
+{
+    auto* label = new ScrollPassthroughLabel();
+    label->setJustificationType(juce::Justification::centred);
+    label->setKeyboardType(juce::TextInputTarget::decimalKeyboard);
+
+    label->setColour(juce::Label::textColourId, slider.findColour(juce::Slider::textBoxTextColourId));
+    label->setColour(juce::Label::backgroundColourId,
+                     (slider.getSliderStyle() == juce::Slider::LinearBar || slider.getSliderStyle() == juce::Slider::LinearBarVertical)
+                         ? juce::Colours::transparentBlack
+                         : slider.findColour(juce::Slider::textBoxBackgroundColourId));
+    label->setColour(juce::Label::outlineColourId, slider.findColour(juce::Slider::textBoxOutlineColourId));
+    label->setColour(juce::TextEditor::textColourId, slider.findColour(juce::Slider::textBoxTextColourId));
+    label->setColour(juce::TextEditor::backgroundColourId,
+                     slider.findColour(juce::Slider::textBoxBackgroundColourId)
+                         .withAlpha((slider.getSliderStyle() == juce::Slider::LinearBar || slider.getSliderStyle() == juce::Slider::LinearBarVertical)
+                                        ? 0.7f
+                                        : 1.0f));
+    label->setColour(juce::TextEditor::outlineColourId, slider.findColour(juce::Slider::textBoxOutlineColourId));
+    label->setColour(juce::TextEditor::highlightColourId, slider.findColour(juce::Slider::textBoxHighlightColourId));
+    return label;
 }
 
 void DarkIdeLookAndFeel::drawStretchableLayoutResizerBar(juce::Graphics& g,

@@ -46,6 +46,7 @@ public:
                       int buttonW,
                       int buttonH,
                       juce::ComboBox& box) override;
+    juce::Label* createComboBoxTextBox(juce::ComboBox&) override;
 
     void drawPopupMenuItem(juce::Graphics& g,
                            const juce::Rectangle<int>& area,
@@ -68,6 +69,7 @@ public:
                           float rotaryStartAngle,
                           float rotaryEndAngle,
                           juce::Slider& slider) override;
+    juce::Label* createSliderTextBox(juce::Slider&) override;
 
     void drawStretchableLayoutResizerBar(juce::Graphics& g,
                                          int width,

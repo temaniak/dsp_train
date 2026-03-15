@@ -48,23 +48,21 @@ int chooseNearestBlockSize(const juce::Array<int>& availableSizes, int requested
     return nearest;
 }
 
-std::vector<int> sanitiseChannelIndices(const std::vector<int>& indices, int maxChannels, int minimumCount)
+std::vector<int> collectRoutedChannels(const std::array<int, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS>& routing,
+                                       int requestedChannels,
+                                       int maxChannels)
 {
     std::set<int> unique;
 
-    for (const auto index : indices)
-        if (juce::isPositiveAndBelow(index, maxChannels))
-            unique.insert(index);
-
-    std::vector<int> result(unique.begin(), unique.end());
-
-    for (int index = 0; result.size() < static_cast<std::size_t>(minimumCount) && index < maxChannels; ++index)
+    for (int index = 0; index < juce::jmin(requestedChannels, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS); ++index)
     {
-        if (! unique.contains(index))
-            result.push_back(index);
+        const auto physicalChannel = routing[static_cast<std::size_t>(index)];
+
+        if (juce::isPositiveAndBelow(physicalChannel, maxChannels))
+            unique.insert(physicalChannel);
     }
 
-    return result;
+    return { unique.begin(), unique.end() };
 }
 
 juce::String formatRate(double sampleRate)
@@ -355,6 +353,7 @@ AudioEngine::ResolvedDeviceState AudioEngine::buildResolvedDeviceState(const Pro
 {
     ResolvedDeviceState resolvedState;
     resolvedState.projectAudioState = state;
+    const auto preferred = state.cachedPreferred;
 
     if (auto* deviceType = deviceManager.getCurrentDeviceTypeObject(); deviceType != nullptr)
     {
@@ -365,6 +364,19 @@ AudioEngine::ResolvedDeviceState AudioEngine::buildResolvedDeviceState(const Pro
 
     juce::AudioDeviceManager::AudioDeviceSetup currentSetup;
     deviceManager.getAudioDeviceSetup(currentSetup);
+
+    resolvedState.requestedSampleRate = state.overrides.sampleRateOverridden && state.overrides.sampleRate > 0.0
+                                      ? state.overrides.sampleRate
+                                      : (preferred.valid && preferred.sampleRate > 0.0 ? preferred.sampleRate
+                                                                                        : (currentSetup.sampleRate > 0.0 ? currentSetup.sampleRate : 44100.0));
+    resolvedState.requestedBlockSize = state.overrides.blockSizeOverridden && state.overrides.blockSize > 0
+                                     ? state.overrides.blockSize
+                                     : (preferred.valid && preferred.blockSize > 0 ? preferred.blockSize
+                                                                                   : (currentSetup.bufferSize > 0 ? currentSetup.bufferSize : 512));
+    resolvedState.requestedInputChannels = preferred.valid ? juce::jlimit(0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, preferred.preferredInputChannels) : 1;
+    resolvedState.requestedOutputChannels = preferred.valid ? juce::jlimit(1, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS,
+                                                                           juce::jmax(1, preferred.preferredOutputChannels))
+                                                            : 2;
 
     auto chooseDeviceName = [&resolvedState] (const juce::String& requestedName,
                                               const juce::StringArray& availableNames,
@@ -407,20 +419,6 @@ AudioEngine::ResolvedDeviceState AudioEngine::buildResolvedDeviceState(const Pro
         resolvedState.outputChannelNames = probeDevice->getOutputChannelNames();
     }
 
-    const auto preferred = state.cachedPreferred;
-    resolvedState.requestedSampleRate = state.overrides.sampleRateOverridden && state.overrides.sampleRate > 0.0
-                                      ? state.overrides.sampleRate
-                                      : (preferred.valid && preferred.sampleRate > 0.0 ? preferred.sampleRate
-                                                                                        : (currentSetup.sampleRate > 0.0 ? currentSetup.sampleRate : 44100.0));
-    resolvedState.requestedBlockSize = state.overrides.blockSizeOverridden && state.overrides.blockSize > 0
-                                     ? state.overrides.blockSize
-                                     : (preferred.valid && preferred.blockSize > 0 ? preferred.blockSize
-                                                                                   : (currentSetup.bufferSize > 0 ? currentSetup.bufferSize : 512));
-    resolvedState.requestedInputChannels = preferred.valid ? juce::jlimit(0, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS, preferred.preferredInputChannels) : 1;
-    resolvedState.requestedOutputChannels = preferred.valid ? juce::jlimit(1, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS,
-                                                                           juce::jmax(1, preferred.preferredOutputChannels))
-                                                            : 2;
-
     if (preferred.valid)
     {
         resolvedState.statusMessages.push_back({
@@ -434,7 +432,6 @@ AudioEngine::ResolvedDeviceState AudioEngine::buildResolvedDeviceState(const Pro
 
     if (state.overrides.sampleRateOverridden || state.overrides.blockSizeOverridden
         || state.overrides.inputDeviceOverridden || state.overrides.outputDeviceOverridden
-        || state.overrides.inputChannelsOverridden || state.overrides.outputChannelsOverridden
         || state.overrides.routingOverridden)
     {
         resolvedState.statusMessages.push_back({
@@ -468,14 +465,12 @@ AudioEngine::ResolvedDeviceState AudioEngine::buildResolvedDeviceState(const Pro
         });
     }
 
-    resolvedState.enabledInputChannels = sanitiseChannelIndices(state.deviceSelection.enabledInputChannels,
-                                                                resolvedState.inputChannelNames.size(),
-                                                                juce::jmin(resolvedState.requestedInputChannels,
-                                                                           resolvedState.inputChannelNames.size()));
-    resolvedState.enabledOutputChannels = sanitiseChannelIndices(state.deviceSelection.enabledOutputChannels,
-                                                                 resolvedState.outputChannelNames.size(),
-                                                                 juce::jmax(1, juce::jmin(resolvedState.requestedOutputChannels,
-                                                                                           resolvedState.outputChannelNames.size())));
+    resolvedState.enabledInputChannels = collectRoutedChannels(state.deviceSelection.inputRouting,
+                                                               resolvedState.requestedInputChannels,
+                                                               resolvedState.inputChannelNames.size());
+    resolvedState.enabledOutputChannels = collectRoutedChannels(state.deviceSelection.outputRouting,
+                                                                resolvedState.requestedOutputChannels,
+                                                                resolvedState.outputChannelNames.size());
 
     juce::AudioDeviceManager::AudioDeviceSetup nextSetup = currentSetup;
     nextSetup.inputDeviceName = resolvedState.inputDeviceName;
@@ -606,6 +601,8 @@ AudioEngine::ResolvedDeviceState AudioEngine::buildResolvedDeviceState(const Pro
     resolvedState.projectAudioState.deviceSelection.outputDeviceName = resolvedState.outputDeviceName;
     resolvedState.projectAudioState.deviceSelection.enabledInputChannels = resolvedState.enabledInputChannels;
     resolvedState.projectAudioState.deviceSelection.enabledOutputChannels = resolvedState.enabledOutputChannels;
+    resolvedState.projectAudioState.overrides.inputChannelsOverridden = false;
+    resolvedState.projectAudioState.overrides.outputChannelsOverridden = false;
     resolvedState.projectAudioState.lastKnownActual.inputDeviceName = resolvedState.inputDeviceName;
     resolvedState.projectAudioState.lastKnownActual.outputDeviceName = resolvedState.outputDeviceName;
     resolvedState.projectAudioState.lastKnownActual.sampleRate = resolvedState.activeSampleRate;
@@ -782,10 +779,6 @@ void AudioEngine::updateStatusTexts(Snapshot& snapshot) const
         overrideFlags.add("input device");
     if (snapshot.overrides.outputDeviceOverridden)
         overrideFlags.add("output device");
-    if (snapshot.overrides.inputChannelsOverridden)
-        overrideFlags.add("input channels");
-    if (snapshot.overrides.outputChannelsOverridden)
-        overrideFlags.add("output channels");
     if (snapshot.overrides.routingOverridden)
         overrideFlags.add("routing");
 

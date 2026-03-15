@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "audio/AudioEngine.h"
+#include "ui/ScrollPassthroughControls.h"
 #include "userdsp/UserDspProjectManager.h"
 
 class ControllerTileComponent;
@@ -55,7 +56,7 @@ private:
     juce::TextButton addKnobButton { "Add Knob" };
     juce::TextButton addButtonButton { "Add Button" };
     juce::TextButton addToggleButton { "Add Toggle" };
-    juce::Viewport tilesViewport;
+    ScrollPassthroughViewport tilesViewport;
     juce::Component tilesContent;
     std::vector<std::unique_ptr<ControllerTileComponent>> tiles;
     std::vector<UserDspControllerDefinition> lastDefinitions;

@@ -1,6 +1,7 @@
 #include "ui/RealtimeControlsComponent.h"
 
 #include "ui/DarkIdeLookAndFeel.h"
+#include "ui/ScrollPassthroughControls.h"
 #include "userdsp/UserDspProjectUtils.h"
 
 namespace
@@ -61,6 +62,7 @@ void configureAlertComboBox(juce::ComboBox* combo)
     if (combo == nullptr)
         return;
 
+    combo->setScrollWheelEnabled(false);
     combo->setColour(juce::ComboBox::backgroundColourId, ide::active);
     combo->setColour(juce::ComboBox::textColourId, ide::text);
     combo->setColour(juce::ComboBox::outlineColourId, ide::border);
@@ -198,7 +200,7 @@ bool showDeleteDialog(const juce::String& label, juce::LookAndFeel* lookAndFeel)
     return window.runModalLoop() == 1;
 }
 
-class ForwardingSlider final : public juce::Slider
+class ForwardingSlider final : public ScrollPassthroughSlider
 {
 public:
     bool isValueEditorActive() const
@@ -320,6 +322,7 @@ public:
         knobSlider.setTextBoxIsEditable(true);
         knobSlider.setRange(0.0, 1.0, 0.001);
         knobSlider.setNumDecimalPlacesToDisplay(3);
+        knobSlider.setScrollWheelEnabled(false);
         knobSlider.setColour(juce::Slider::rotarySliderFillColourId, ide::constant);
         knobSlider.setColour(juce::Slider::rotarySliderOutlineColourId, ide::border.brighter(0.1f));
         knobSlider.setColour(juce::Slider::textBoxTextColourId, ide::text);
@@ -538,7 +541,7 @@ RealtimeControlsComponent::RealtimeControlsComponent(AudioEngine& audioEngineToC
     editModeButton.onClick = [this] { setMode(Mode::edit); };
     playModeButton.onClick = [this] { setMode(Mode::play); };
 
-    tilesViewport.setViewedComponent(&tilesContent, false);
+    tilesViewport.setViewedComponentWithMouseWheelPassthrough(&tilesContent, false);
     tilesViewport.setScrollBarsShown(true, false);
     tilesViewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
 
