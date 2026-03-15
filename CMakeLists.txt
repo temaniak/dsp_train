@@ -23,7 +23,8 @@ add_subdirectory("${JUCE_DIR}" JUCE)
 
 juce_add_gui_app(DspEducationStand
     COMPANY_NAME "OpenAI"
-    PRODUCT_NAME "DSP Education Stand")
+    PRODUCT_NAME "DSP Education Stand"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/icon.png")
 
 juce_generate_juce_header(DspEducationStand)
 
@@ -72,6 +73,10 @@ target_link_libraries(DspEducationStand
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+set_target_properties(DspEducationStand PROPERTIES
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
 
 if (MSVC)
     target_compile_options(DspEducationStand PRIVATE /utf-8)
