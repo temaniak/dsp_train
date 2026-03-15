@@ -6,6 +6,7 @@ The app is now focused on one workflow only:
 - choose a source signal
 - edit a C++ user DSP project
 - define realtime controls in `Controls`
+- use MIDI mappings or a MIDI keyboard when needed
 - compile and hot-reload the module
 
 Built-in DSP processors and preset management were removed. The app is now a user-DSP-only playground.
@@ -15,6 +16,7 @@ Built-in DSP processors and preset management were removed. The app is now a use
 - project-based user DSP development with `.dspedu` archives
 - project tree with multiple source/header files
 - safe compile, load, and hot reload of user DSP modules
+- inline-edited runtime controls UI
 - runtime controls exposed as `controls.<codeName>`
 - source signals:
   - sine
@@ -22,10 +24,26 @@ Built-in DSP processors and preset management were removed. The app is now a use
   - impulse
   - WAV file
   - live hardware input
-- audio device selection, channel enablement, and routing
+- audio device selection and routing
+- global MIDI input selection
+- MIDI bindings for controls:
+  - CC
+  - Note Gate
+  - Note Velocity
+  - Note Number
+  - Pitch Wheel
+- direct MIDI keyboard state for DSP code:
+  - `midi.gate`
+  - `midi.noteNumber`
+  - `midi.velocity`
+  - `midi.pitchWheel`
+  - `midi.voices[]`
+  - `midi.channelPitchWheel[]`
 - preferred sample rate / block size / channel count reported by the module
 - stereo oscilloscope popup
 - dark IDE-style UI
+- ready-to-open example project archives
+- English and Russian manuals
 
 ## Main Workflow
 
@@ -34,7 +52,10 @@ Built-in DSP processors and preset management were removed. The app is now a use
 3. Set the exported processor class in `Processor Class`.
 4. Open `Controls` and add knobs, buttons, or toggles.
 5. Compile the project.
-6. The app stages the project, injects the SDK wrapper automatically, builds a native module, and hot-swaps it safely.
+6. Choose audio and MIDI devices if needed.
+7. Start audio and test the result.
+
+During compile, the app stages the project, injects the SDK wrapper automatically, builds a native module, and hot-swaps it safely.
 
 A new project now starts as a minimal compile-ready file:
 
@@ -121,6 +142,9 @@ Behavior:
 - knobs output `0..1`
 - buttons are momentary booleans
 - toggles are latched booleans
+- controller metadata is edited inline in the control tiles
+- metadata edits update the in-memory project immediately
+- compile again after changing controller layout or metadata that must relink to DSP
 
 Generated names are available in code as:
 
@@ -129,6 +153,50 @@ controls.cutoffKnob
 controls.triggerButton
 controls.bypassToggle
 ```
+
+If the current control layout no longer matches the compiled module, the UI can still show preview values, but you should compile again before expecting the running DSP module to use that exact layout.
+
+## MIDI
+
+There are two different MIDI workflows in the app.
+
+### MIDI -> UI controls
+
+Each user control can be bound to MIDI in the `Controls` window.
+
+Supported binding sources:
+
+- `CC`
+- `Note Gate`
+- `Note Velocity`
+- `Note Number`
+- `Pitch Wheel`
+
+Bindings can be assigned manually or with `Learn`.
+
+### MIDI keyboard -> DSP code
+
+For synths and direct note handling, DSP code can read the generated `midi` object directly.
+
+Useful fields include:
+
+- `midi.gate`
+- `midi.noteNumber`
+- `midi.velocity`
+- `midi.pitchWheel`
+- `midi.voiceCount`
+- `midi.voices[]`
+- `midi.channelPitchWheel[]`
+
+Typical usage:
+
+- mono synths use `midi.gate`, `midi.noteNumber`, and `midi.pitchWheel`
+- poly synths use `midi.voices[]` and `midi.channelPitchWheel[]`
+
+Important nuance:
+
+- direct `midi.pitchWheel` in DSP code uses `-1..1`
+- `Pitch Wheel` mapped to a control is normalized to `0..1`
 
 ## Example Projects
 
@@ -140,6 +208,7 @@ The repository now includes educational examples in [example_projects](./example
 - `lfo`
 - `delay`
 - `simple_synth_voice`
+- `poly_synth_adsr`
 
 The readable source versions live in `example_projects/`.
 Ready-to-open archives live in `example_project_archives/`.
@@ -148,6 +217,11 @@ Each source example is stored as an extracted `.dspedu` project:
 
 - `project.json` contains controller metadata and project structure
 - `files/src/main.cpp` contains the processor source with detailed comments
+
+The two synth examples are intentionally more structured than the single-file effect examples:
+
+- `simple_synth_voice`: monophonic MIDI keyboard synth split into helper headers
+- `poly_synth_adsr`: polyphonic saw synth with ADSR, filter, and per-voice classes
 
 If you update the extracted examples, rebuild the archives with:
 
@@ -161,6 +235,13 @@ Most examples are designed to process an incoming signal. They work especially w
 - `WAV`
 - `Impulse`
 - `Noise`
+
+## Manuals
+
+User-facing manuals are available in the repository root:
+
+- [manual_en.md](./manual_en.md)
+- [manual_ru.md](./manual_ru.md)
 
 ## Audio Model
 
@@ -217,6 +298,13 @@ cmake -S . -B build -DJUCE_DIR=/path/to/JUCE
 cmake --build build --target DspEducationStand -j
 ```
 
+### macOS Release Build
+
+```bash
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DJUCE_DIR=/path/to/JUCE
+cmake --build build-release --target DspEducationStand -j
+```
+
 ### Optional Tests
 
 ```bash
@@ -236,6 +324,12 @@ macOS:
 
 ```bash
 open "build/DspEducationStand_artefacts/DSP Education Stand.app"
+```
+
+macOS release build:
+
+```bash
+open "build-release/DspEducationStand_artefacts/Release/DSP Education Stand.app"
 ```
 
 Windows:
@@ -269,6 +363,8 @@ tests/         Optional regression tests
 - The practical audio API is still limited to `DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS = 2`.
 - Routing is a practical channel mapping system, not a full mixer matrix.
 - The project targets local developer builds, not packaged or notarized distribution.
+- The selected MIDI input device is app-wide and is not stored inside `.dspedu` projects.
 - User DSP compilation depends on the local platform toolchain:
   - MSVC on Windows
   - Apple clang on macOS
+- Linux is not currently configured as a documented build target in this repository.
