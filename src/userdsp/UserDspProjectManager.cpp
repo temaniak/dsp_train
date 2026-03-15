@@ -1,12 +1,13 @@
 #include "userdsp/UserDspProjectManager.h"
 
+#include "midi/MidiBinding.h"
 #include "userdsp/UserDspProjectUtils.h"
 
 #include <utility>
 
 namespace
 {
-constexpr int projectArchiveVersion = 3;
+constexpr int projectArchiveVersion = 4;
 constexpr int zipCompressionLevel = 9;
 
 juce::Array<juce::var> intsToVar(const std::vector<int>& values)
@@ -274,6 +275,16 @@ juce::Array<juce::var> controllerDefinitionsToVar(const std::vector<UserDspContr
         object->setProperty("label", definition.label);
         object->setProperty("codeName", definition.codeName);
         object->setProperty("midiBindingHint", definition.midiBindingHint);
+
+        if (midi::isBindingActive(definition.midiBinding))
+        {
+            auto* midiBindingObject = new juce::DynamicObject();
+            midiBindingObject->setProperty("source", midi::midiBindingSourceToStableString(definition.midiBinding.source));
+            midiBindingObject->setProperty("channel", definition.midiBinding.channel);
+            midiBindingObject->setProperty("data1", definition.midiBinding.data1);
+            object->setProperty("midiBinding", juce::var(midiBindingObject));
+        }
+
         values.add(juce::var(object));
     }
 
@@ -303,6 +314,15 @@ juce::Result controllerDefinitionsFromVar(const juce::var& value, std::vector<Us
         definition.label = object->getProperty("label").toString().trim();
         definition.codeName = object->getProperty("codeName").toString().trim();
         definition.midiBindingHint = object->getProperty("midiBindingHint").toString().trim();
+
+        if (const auto* midiBindingObject = object->getProperty("midiBinding").getDynamicObject(); midiBindingObject != nullptr)
+        {
+            definition.midiBinding.source = midi::midiBindingSourceFromStableString(midiBindingObject->getProperty("source").toString());
+            definition.midiBinding.channel = static_cast<int>(midiBindingObject->getProperty("channel"));
+            definition.midiBinding.data1 = static_cast<int>(midiBindingObject->getProperty("data1"));
+            definition.midiBinding = midi::sanitiseMidiBinding(definition.midiBinding);
+        }
+
         definitions.push_back(std::move(definition));
     }
 
@@ -440,7 +460,11 @@ juce::Result UserDspProjectManager::updateController(int index, const UserDspCon
     auto updatedDefinition = definition;
     updatedDefinition.label = updatedDefinition.label.trim();
     updatedDefinition.codeName = updatedDefinition.codeName.trim();
+    updatedDefinition.midiBinding = midi::sanitiseMidiBinding(updatedDefinition.midiBinding);
     updatedDefinition.midiBindingHint = updatedDefinition.midiBindingHint.trim();
+
+    if (midi::isBindingActive(updatedDefinition.midiBinding))
+        updatedDefinition.midiBindingHint = midi::buildMidiBindingSummary(updatedDefinition.midiBinding);
 
     if (const auto validationResult = userdsp::validateControllerDefinition(updatedDefinition); validationResult.failed())
         return validationResult;

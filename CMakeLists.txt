@@ -34,6 +34,8 @@ target_sources(DspEducationStand
         src/app/MainWindow.cpp
         src/app/MainComponent.cpp
         src/audio/AudioEngine.cpp
+        src/midi/MidiBinding.cpp
+        src/midi/MidiPerformanceState.cpp
         src/audio/SignalSources.cpp
         src/audio/WavFileSource.cpp
         src/ui/DarkIdeLookAndFeel.cpp
@@ -41,6 +43,7 @@ target_sources(DspEducationStand
         src/ui/OscilloscopeComponent.cpp
         src/ui/RealtimeControlsComponent.cpp
         src/ui/ToolWindow.cpp
+        src/util/AppSettings.cpp
         src/userdsp/UserDspCompiler.cpp
         src/userdsp/UserDspProjectManager.cpp
         src/userdsp/UserDspProjectUtils.cpp
@@ -83,6 +86,10 @@ if (DSP_EDU_BUILD_TESTS)
     target_sources(DspEducationStandTests
         PRIVATE
             tests/TestMain.cpp
+            tests/ExampleMonoSynthCompileSmoke.cpp
+            tests/ExamplePolySynthCompileSmoke.cpp
+            src/midi/MidiBinding.cpp
+            src/midi/MidiPerformanceState.cpp
             src/userdsp/UserDspProjectManager.cpp
             src/userdsp/UserDspProjectUtils.cpp)
 

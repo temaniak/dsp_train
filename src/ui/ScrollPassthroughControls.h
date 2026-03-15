@@ -66,3 +66,14 @@ public:
         scroll_passthrough::ignoreMouseWheel(event, wheel);
     }
 };
+
+class ScrollPassthroughTextEditor : public juce::TextEditor
+{
+public:
+    using juce::TextEditor::TextEditor;
+
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
+    {
+        scroll_passthrough::ignoreMouseWheel(event, wheel);
+    }
+};

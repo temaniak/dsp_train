@@ -15,6 +15,12 @@ Projects included here:
 - `envelope`: a one-shot decay envelope that gates the incoming signal
 - `lfo`: an LFO that sweeps a low-pass filter over the incoming signal
 - `delay`: a stereo delay that makes the role of the incoming source obvious
-- `simple_synth_voice`: a self-contained saw voice with filter and decay envelope
+- `simple_synth_voice`: a monophonic MIDI keyboard synth split into small header-based classes
+- `poly_synth_adsr`: a polyphonic saw synth with ADSR envelope, resonant low-pass filter, and per-voice classes
+
+The synth examples are intentionally structured differently from the effect examples:
+- `main.cpp` is tiny and only includes the processor header
+- the processor pulls in separate `.h` files for oscillator, envelope, filter, and helper math
+- comments are intentionally more verbose so the project can be read like teaching material
 
 To turn one of these folders into a `.dspedu` archive later, zip the contents of the example folder itself so that the archive root contains `project.json` and `files/`.

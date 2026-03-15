@@ -108,18 +108,19 @@ private:
     juce::Label codeFontSizeValueLabel;
 
     ScrollPassthroughComboBox sourceCombo;
-    juce::TextButton startButton { "Start Audio" };
-    juce::TextButton stopButton { "Stop Audio" };
+    juce::TextButton transportButton { "Start Audio" };
     ScrollPassthroughSlider gainSlider;
     ScrollPassthroughSlider frequencySlider;
     juce::Label gainLabel;
     juce::Label frequencyLabel;
     juce::Label inputDeviceLabel;
     juce::Label outputDeviceLabel;
+    juce::Label midiInputLabel;
     juce::Label sampleRateLabel;
     juce::Label blockSizeLabel;
     juce::Label inputRoutingLabel;
     juce::Label outputRoutingLabel;
+    juce::Label midiInputStatusLabel;
     juce::Label preferredAudioStatusLabel;
     juce::Label requestedAudioStatusLabel;
     juce::Label actualAudioStatusLabel;
@@ -127,6 +128,7 @@ private:
     juce::Label warningAudioStatusLabel;
     ScrollPassthroughComboBox inputDeviceCombo;
     ScrollPassthroughComboBox outputDeviceCombo;
+    ScrollPassthroughComboBox midiInputCombo;
     ScrollPassthroughComboBox sampleRateCombo;
     ScrollPassthroughComboBox blockSizeCombo;
     std::array<ScrollPassthroughComboBox, DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS> inputRoutingCombos;

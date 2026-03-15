@@ -407,6 +407,9 @@ juce::Result validateControllerDefinition(const UserDspControllerDefinition& def
     if (! isValidIdentifier(definition.codeName))
         return juce::Result::fail("Controller code name must be a valid C++ identifier.");
 
+    if (const auto midiValidation = midi::validateMidiBinding(definition.midiBinding); midiValidation.failed())
+        return midiValidation;
+
     return juce::Result::ok();
 }
 
@@ -561,8 +564,11 @@ juce::String buildGeneratedControlsHeader(const std::vector<UserDspControllerDef
     header << "namespace dspedu\n{\n";
     header << "const DspEduProjectControls& getProjectControls() noexcept;\n";
     header << "void setProjectControlValue(int controlIndex, float value) noexcept;\n";
+    header << "const DspEduMidiState& getMidiState() noexcept;\n";
+    header << "void setMidiState(const DspEduMidiState& state) noexcept;\n";
     header << "} // namespace dspedu\n\n";
     header << "inline const auto& controls = ::dspedu::getProjectControls();\n";
+    header << "inline const auto& midi = ::dspedu::getMidiState();\n";
     return header;
 }
 
@@ -572,11 +578,16 @@ juce::String buildWrapperSourceSnippet(const std::vector<UserDspControllerDefini
     juce::String wrappedSource;
     wrappedSource << "namespace\n{\n";
     wrappedSource << "DspEduProjectControls gDspEduProjectControls;\n";
+    wrappedSource << "DspEduMidiState gDspEduMidiState;\n";
     wrappedSource << "} // namespace\n\n";
     wrappedSource << "namespace dspedu\n{\n";
     wrappedSource << "const DspEduProjectControls& getProjectControls() noexcept\n";
     wrappedSource << "{\n";
     wrappedSource << "    return ::gDspEduProjectControls;\n";
+    wrappedSource << "}\n\n";
+    wrappedSource << "const DspEduMidiState& getMidiState() noexcept\n";
+    wrappedSource << "{\n";
+    wrappedSource << "    return ::gDspEduMidiState;\n";
     wrappedSource << "}\n\n";
     wrappedSource << "void setProjectControlValue(int controlIndex, float value) noexcept\n";
     wrappedSource << "{\n";
@@ -596,6 +607,12 @@ juce::String buildWrapperSourceSnippet(const std::vector<UserDspControllerDefini
 
     wrappedSource << "        default: break;\n";
     wrappedSource << "    }\n";
+    wrappedSource << "}\n";
+    wrappedSource << "\n";
+    wrappedSource << "void setMidiState(const DspEduMidiState& state) noexcept\n";
+    wrappedSource << "{\n";
+    wrappedSource << "    ::gDspEduMidiState = state;\n";
+    wrappedSource << "    ::gDspEduMidiState.structSize = sizeof(DspEduMidiState);\n";
     wrappedSource << "}\n";
     wrappedSource << "} // namespace dspedu\n\n";
     wrappedSource << "class DspEduGeneratedProcessorWrapper\n";
@@ -624,6 +641,10 @@ juce::String buildWrapperSourceSnippet(const std::vector<UserDspControllerDefini
     wrappedSource << "    void setControlValue(int controlIndex, float value)\n";
     wrappedSource << "    {\n";
     wrappedSource << "        dspedu::setProjectControlValue(controlIndex, value);\n";
+    wrappedSource << "    }\n\n";
+    wrappedSource << "    void setMidiState(const DspEduMidiState& state)\n";
+    wrappedSource << "    {\n";
+    wrappedSource << "        dspedu::setMidiState(state);\n";
     wrappedSource << "    }\n\n";
     wrappedSource << "private:\n";
     wrappedSource << "    " << processorClassName.trim() << " processor;\n";

@@ -12,7 +12,7 @@ namespace
 constexpr int controlsWidth = 360;
 constexpr int toolbarHeight = 48;
 constexpr int splitterThickness = 8;
-constexpr int panelToggleStripWidth = 24;
+constexpr int panelToggleStripWidth = 12;
 constexpr float panelAnimationRate = 0.22f;
 constexpr float panelAnimationSnapDistance = 1.0f;
 constexpr float navigatorMinimumWidth = 210.0f;
@@ -267,6 +267,7 @@ MainComponent::MainComponent()
     configureBodyLabel(frequencyLabel, "Sine Frequency");
     configureBodyLabel(inputDeviceLabel, "Input Device");
     configureBodyLabel(outputDeviceLabel, "Output Device");
+    configureBodyLabel(midiInputLabel, "MIDI Input");
     configureBodyLabel(sampleRateLabel, "Sample Rate");
     configureBodyLabel(blockSizeLabel, "Block Size");
     configureBodyLabel(inputRoutingLabel, "Input Routing");
@@ -282,11 +283,13 @@ MainComponent::MainComponent()
     configureStatusLabel(actualAudioStatusLabel);
     configureStatusLabel(overrideAudioStatusLabel);
     configureStatusLabel(warningAudioStatusLabel);
+    configureStatusLabel(midiInputStatusLabel);
     preferredAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
     requestedAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
     actualAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
     overrideAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
     warningAudioStatusLabel.setJustificationType(juce::Justification::topLeft);
+    midiInputStatusLabel.setJustificationType(juce::Justification::topLeft);
     userModuleStatusLabel.setJustificationType(juce::Justification::topLeft);
     configureStatusLabel(projectPathLabel);
     configureStatusLabel(compileStatusLabel);
@@ -321,6 +324,7 @@ MainComponent::MainComponent()
 
     configureCombo(inputDeviceCombo);
     configureCombo(outputDeviceCombo);
+    configureCombo(midiInputCombo);
     configureCombo(sampleRateCombo);
     configureCombo(blockSizeCombo);
 
@@ -368,11 +372,11 @@ MainComponent::MainComponent()
          {
              &controlsViewport, &workspaceResizerBar, navigatorResizeBar.get(), &leftPanelToggleStrip, &navigatorToggleStrip,
              &sourceHeader, &transportHeader, &deviceHeader, &wavHeader, &dspHeader, &userHeader, &toolsHeader, &editorHeader, &navigatorHeader,
-             &logHeader, &projectPathLabel, &codeFontSizeLabel, &codeFontSizeValueLabel, &sourceCombo, &startButton, &stopButton,
+             &logHeader, &projectPathLabel, &codeFontSizeLabel, &codeFontSizeValueLabel, &sourceCombo, &transportButton,
              &gainLabel, &gainSlider, &frequencyLabel, &frequencySlider, &inputDeviceLabel, &outputDeviceLabel, &sampleRateLabel, &blockSizeLabel,
-             &inputRoutingLabel, &outputRoutingLabel, &inputDeviceCombo, &outputDeviceCombo,
+             &midiInputLabel, &inputRoutingLabel, &outputRoutingLabel, &inputDeviceCombo, &outputDeviceCombo, &midiInputCombo,
              &sampleRateCombo, &blockSizeCombo, &preferredAudioStatusLabel, &requestedAudioStatusLabel, &actualAudioStatusLabel, &overrideAudioStatusLabel,
-             &warningAudioStatusLabel, &loadWavButton,
+             &warningAudioStatusLabel, &midiInputStatusLabel, &loadWavButton,
              &wavFileLabel, &wavLoopToggle, &wavPositionLabel, &wavPositionSlider, &newProjectButton, &openProjectButton, &saveProjectButton, &saveProjectAsButton,
              &compileButton, &showOscilloscopeButton, &showControlsButton, &toggleLeftPanelButton, &toggleNavigatorButton,
              &codeFontSizeSlider, &processorClassLabel, &processorClassEditor, &compileStatusLabel, &buildLogEditor, &codeEditor
@@ -380,13 +384,14 @@ MainComponent::MainComponent()
     {
         if (component == &sourceHeader || component == &transportHeader || component == &wavHeader || component == &dspHeader
             || component == &deviceHeader || component == &userHeader || component == &toolsHeader || component == &sourceCombo
-            || component == &startButton || component == &stopButton || component == &gainLabel || component == &gainSlider
+            || component == &transportButton || component == &gainLabel || component == &gainSlider
             || component == &frequencyLabel || component == &frequencySlider || component == &inputDeviceLabel || component == &outputDeviceLabel
-            || component == &sampleRateLabel || component == &blockSizeLabel
+            || component == &midiInputLabel || component == &sampleRateLabel || component == &blockSizeLabel
             || component == &inputRoutingLabel || component == &outputRoutingLabel || component == &inputDeviceCombo || component == &outputDeviceCombo
+            || component == &midiInputCombo
             || component == &sampleRateCombo || component == &blockSizeCombo || component == &preferredAudioStatusLabel
             || component == &requestedAudioStatusLabel || component == &actualAudioStatusLabel || component == &overrideAudioStatusLabel
-            || component == &warningAudioStatusLabel
+            || component == &warningAudioStatusLabel || component == &midiInputStatusLabel
             || component == &loadWavButton || component == &wavFileLabel || component == &wavLoopToggle || component == &wavPositionLabel
             || component == &wavPositionSlider || component == &showOscilloscopeButton
             || component == &showControlsButton)
@@ -448,12 +453,24 @@ void MainComponent::paint(juce::Graphics& g)
         g.drawRoundedRectangle(area, 8.0f, 1.0f);
     };
 
+    auto drawToggleStrip = [&g] (juce::Rectangle<int> bounds)
+    {
+        if (bounds.isEmpty())
+            return;
+
+        g.setColour(ide::background.brighter(0.06f));
+        g.fillRect(bounds);
+        g.setColour(ide::border);
+        g.drawVerticalLine(bounds.getX(), static_cast<float>(bounds.getY()), static_cast<float>(bounds.getBottom()));
+        g.drawVerticalLine(bounds.getRight() - 1, static_cast<float>(bounds.getY()), static_cast<float>(bounds.getBottom()));
+    };
+
     drawPanel(controlsPanel.getBounds(), ide::panel);
-    drawPanel(leftPanelToggleStrip.getBounds(), ide::active);
+    drawToggleStrip(leftPanelToggleStrip.getBounds());
     drawPanel(editorToolbarPanel.getBounds(), ide::panel);
     drawPanel(editorPanel.getBounds(), ide::background);
     drawPanel(navigatorPanel.getBounds(), ide::panel);
-    drawPanel(navigatorToggleStrip.getBounds(), ide::active);
+    drawToggleStrip(navigatorToggleStrip.getBounds());
     drawPanel(logPanel.getBounds(), ide::panel);
     drawPanel(editorOptionsPanel.getBounds(), ide::active);
 }
@@ -461,8 +478,8 @@ void MainComponent::paint(juce::Graphics& g)
 void MainComponent::resized()
 {
     auto bounds = getLocalBounds().reduced(12);
-    controlsPanel.setBounds(bounds.removeFromLeft(juce::roundToInt(controlsPanelCurrentWidth)).reduced(0, 4));
     leftPanelToggleStrip.setBounds(bounds.removeFromLeft(panelToggleStripWidth).reduced(0, 4));
+    controlsPanel.setBounds(bounds.removeFromLeft(juce::roundToInt(controlsPanelCurrentWidth)).reduced(0, 4));
     bounds.removeFromLeft(10);
 
     auto contentArea = bounds;
@@ -515,19 +532,41 @@ void MainComponent::resized()
             return row;
         };
 
+        transportHeader.setBounds(placeRow(24));
+        transportButton.setBounds(placeRow(30));
+
+        y += 8;
+
+        toolsHeader.setBounds(placeRow(24));
+        auto toolsRow = placeRow(30);
+        showOscilloscopeButton.setBounds(toolsRow.removeFromLeft(toolsRow.getWidth() / 2).reduced(2, 0));
+        showControlsButton.setBounds(toolsRow.reduced(2, 0));
+
+        y += 8;
+
         sourceHeader.setBounds(placeRow(24));
         sourceCombo.setBounds(placeRow(28));
+        gainLabel.setBounds(placeRow(18));
+        gainSlider.setBounds(placeRow(28));
+        frequencyLabel.setBounds(placeRow(18));
+        frequencySlider.setBounds(placeRow(28));
+        wavHeader.setBounds(placeRow(24));
+        loadWavButton.setBounds(placeRow(28));
+        wavFileLabel.setBounds(placeRow(20));
+        wavLoopToggle.setBounds(placeRow(22));
+        wavPositionLabel.setBounds(placeRow(18));
+        wavPositionSlider.setBounds(placeRow(28));
 
-        transportHeader.setBounds(placeRow(24));
-        auto transportRow = placeRow(30);
-        startButton.setBounds(transportRow.removeFromLeft(transportRow.getWidth() / 2).reduced(2, 0));
-        stopButton.setBounds(transportRow.reduced(2, 0));
+        y += 8;
 
         deviceHeader.setBounds(placeRow(24));
         inputDeviceLabel.setBounds(placeRow(18));
         inputDeviceCombo.setBounds(placeRow(28));
         outputDeviceLabel.setBounds(placeRow(18));
         outputDeviceCombo.setBounds(placeRow(28));
+        midiInputLabel.setBounds(placeRow(18));
+        midiInputCombo.setBounds(placeRow(28));
+        midiInputStatusLabel.setBounds(placeRow(40));
 
         auto rateRow = placeRow(46);
         auto sampleRateArea = rateRow.removeFromLeft(rateRow.getWidth() / 2).reduced(2, 0);
@@ -565,23 +604,6 @@ void MainComponent::resized()
                 combo.setBounds({});
         }
 
-        toolsHeader.setBounds(placeRow(24));
-        auto toolsRow = placeRow(30);
-        showOscilloscopeButton.setBounds(toolsRow.removeFromLeft(toolsRow.getWidth() / 2).reduced(2, 0));
-        showControlsButton.setBounds(toolsRow.reduced(2, 0));
-
-        gainLabel.setBounds(placeRow(18));
-        gainSlider.setBounds(placeRow(28));
-        frequencyLabel.setBounds(placeRow(18));
-        frequencySlider.setBounds(placeRow(28));
-
-        wavHeader.setBounds(placeRow(24));
-        loadWavButton.setBounds(placeRow(28));
-        wavFileLabel.setBounds(placeRow(20));
-        wavLoopToggle.setBounds(placeRow(22));
-        wavPositionLabel.setBounds(placeRow(18));
-        wavPositionSlider.setBounds(placeRow(28));
-
         dspHeader.setBounds(placeRow(24));
         userHeader.setBounds(placeRow(24));
         userModuleStatusLabel.setBounds(placeRow(84));
@@ -592,9 +614,11 @@ void MainComponent::resized()
     {
         for (auto* component : std::initializer_list<juce::Component*>
              {
-                 &sourceHeader, &sourceCombo, &transportHeader, &startButton, &stopButton, &toolsHeader,
+                 &transportHeader, &transportButton, &toolsHeader,
                  &showOscilloscopeButton, &showControlsButton, &gainLabel, &gainSlider, &frequencyLabel, &frequencySlider,
+                 &sourceHeader, &sourceCombo,
                  &deviceHeader, &inputDeviceLabel, &inputDeviceCombo, &outputDeviceLabel, &outputDeviceCombo,
+                 &midiInputLabel, &midiInputCombo, &midiInputStatusLabel,
                  &sampleRateLabel, &sampleRateCombo, &blockSizeLabel, &blockSizeCombo,
                  &inputRoutingLabel, &outputRoutingLabel, &preferredAudioStatusLabel, &requestedAudioStatusLabel,
                  &actualAudioStatusLabel, &overrideAudioStatusLabel, &warningAudioStatusLabel, &wavHeader,
@@ -614,8 +638,8 @@ void MainComponent::resized()
         controlsContent.setSize(juce::jmax(leftPanelWidth, 1), juce::jmax(leftPanelHeight, 1));
     }
 
-    toggleLeftPanelButton.setBounds(leftPanelToggleStrip.getBounds().reduced(2, 8));
-    toggleNavigatorButton.setBounds(navigatorToggleStrip.getBounds().reduced(2, 8));
+    toggleLeftPanelButton.setBounds(leftPanelToggleStrip.getBounds());
+    toggleNavigatorButton.setBounds(navigatorToggleStrip.getBounds());
 
     auto toolbarArea = editorToolbarPanel.getBounds().reduced(10, 8);
     auto optionsArea = toolbarArea.removeFromRight(320);
@@ -791,6 +815,7 @@ void MainComponent::timerCallback()
 {
     updatePanelAnimation();
     audioEngine.getUserDspHost().reclaimRetiredRuntimes();
+    audioEngine.refreshMidiInputs();
 
     const auto userSnapshot = audioEngine.getUserDspHost().getSnapshot();
 
@@ -1012,8 +1037,13 @@ void MainComponent::configureSlider(juce::Slider& slider,
 
 void MainComponent::configureButtonsAndCallbacks()
 {
-    startButton.onClick = [this] { audioEngine.startTransport(); };
-    stopButton.onClick = [this] { audioEngine.stopTransport(); };
+    transportButton.onClick = [this]
+    {
+        if (audioEngine.getSnapshot().transportRunning)
+            audioEngine.stopTransport();
+        else
+            audioEngine.startTransport();
+    };
     loadWavButton.onClick = [this] { launchLoadWavChooser(); };
     showOscilloscopeButton.onClick = [this] { showOscilloscopeWindow(); };
     showControlsButton.onClick = [this] { showControlsWindow(); };
@@ -1079,6 +1109,20 @@ void MainComponent::configureButtonsAndCallbacks()
             state.deviceSelection.outputDeviceName = outputDeviceCombo.getItemText(selectedIndex);
             state.overrides.outputDeviceOverridden = true;
         });
+    };
+
+    midiInputCombo.onChange = [this]
+    {
+        if (updatingUi)
+            return;
+
+        const auto selectedIndex = midiInputCombo.getSelectedItemIndex();
+
+        if (! juce::isPositiveAndBelow(selectedIndex, midiInputCombo.getNumItems()))
+            return;
+
+        if (const auto result = audioEngine.setSelectedMidiInputDevice(midiInputCombo.getItemText(selectedIndex)); result.failed())
+            showErrorMessage("MIDI Input Failed", result.getErrorMessage());
     };
 
     sampleRateCombo.onChange = [this]
@@ -1198,8 +1242,8 @@ void MainComponent::refreshEngineState()
     frequencySlider.setEnabled(snapshot.sourceType == SourceType::sine);
     wavLoopToggle.setEnabled(snapshot.wavLoaded);
     wavPositionSlider.setEnabled(snapshot.wavLoaded);
-    stopButton.setEnabled(snapshot.transportRunning);
-    startButton.setEnabled(! snapshot.transportRunning);
+    transportButton.setButtonText(snapshot.transportRunning ? "Stop Audio" : "Start Audio");
+    transportButton.setToggleState(snapshot.transportRunning, juce::dontSendNotification);
 
     updatingUi = false;
     refreshAudioDeviceControls();
@@ -1236,6 +1280,7 @@ void MainComponent::refreshAudioDeviceControls()
 
     repopulateDeviceCombo(inputDeviceCombo, snapshot.availableInputDevices, snapshot.inputDeviceName, "No input device");
     repopulateDeviceCombo(outputDeviceCombo, snapshot.availableOutputDevices, snapshot.outputDeviceName, "No output device");
+    repopulateDeviceCombo(midiInputCombo, snapshot.availableMidiInputDevices, snapshot.midiInputDeviceName, "No MIDI input");
 
     sampleRateCombo.clear(juce::dontSendNotification);
     for (const auto rate : snapshot.availableSampleRates)
@@ -1309,9 +1354,13 @@ void MainComponent::refreshAudioDeviceControls()
     actualAudioStatusLabel.setText(snapshot.actualStatusText, juce::dontSendNotification);
     overrideAudioStatusLabel.setText(snapshot.overrideStatusText, juce::dontSendNotification);
     warningAudioStatusLabel.setText(snapshot.warningStatusText, juce::dontSendNotification);
+    midiInputStatusLabel.setText(snapshot.midiLastMessageText.isNotEmpty() ? snapshot.midiLastMessageText
+                                                                           : snapshot.midiInputStatusText,
+                                 juce::dontSendNotification);
 
     inputDeviceCombo.setEnabled(inputDeviceCombo.getNumItems() > 0);
     outputDeviceCombo.setEnabled(outputDeviceCombo.getNumItems() > 0);
+    midiInputCombo.setEnabled(midiInputCombo.getNumItems() > 0);
     updatingUi = false;
 
     if (comboVisibilityChanged && controlsViewport.getWidth() > 0 && controlsViewport.getHeight() > 0)
@@ -1320,6 +1369,7 @@ void MainComponent::refreshAudioDeviceControls()
 
 void MainComponent::refreshUserControls()
 {
+    audioEngine.setProjectControllerDefinitions(projectManager.getControllerDefinitions());
     const auto snapshot = audioEngine.getUserDspHost().getSnapshot();
     const auto& controllerDefinitions = projectManager.getControllerDefinitions();
 
@@ -1486,14 +1536,23 @@ void MainComponent::applyDarkTheme()
         button.setColour(juce::TextButton::textColourOnId, ide::text);
     };
 
-    for (auto* button : std::array<juce::TextButton*, 10>
-         { &startButton, &stopButton, &loadWavButton, &newProjectButton, &openProjectButton, &saveProjectButton,
-           &saveProjectAsButton, &showOscilloscopeButton, &showControlsButton, &toggleLeftPanelButton })
+    auto configureStripButton = [] (juce::TextButton& button)
+    {
+        button.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        button.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+        button.setColour(juce::TextButton::textColourOffId, ide::textSecondary);
+        button.setColour(juce::TextButton::textColourOnId, ide::text);
+    };
+
+    for (auto* button : std::array<juce::TextButton*, 8>
+         { &transportButton, &loadWavButton, &newProjectButton, &openProjectButton, &saveProjectButton,
+           &saveProjectAsButton, &showOscilloscopeButton, &showControlsButton })
     {
         configureButton(*button);
     }
 
-    configureButton(toggleNavigatorButton);
+    configureStripButton(toggleLeftPanelButton);
+    configureStripButton(toggleNavigatorButton);
     compileButton.setColour(juce::TextButton::buttonColourId, ide::success.darker(0.2f));
     compileButton.setColour(juce::TextButton::buttonOnColourId, ide::success);
     compileButton.setColour(juce::TextButton::textColourOffId, ide::text);

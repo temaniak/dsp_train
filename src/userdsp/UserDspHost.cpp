@@ -72,6 +72,10 @@ struct UserDspHost::Runtime
 
 UserDspHost::UserDspHost()
 {
+    currentMidiState = {};
+    currentMidiState.structSize = sizeof(DspEduMidiState);
+    currentMidiState.noteNumber = -1;
+
     for (auto& controlValue : controlValues)
         controlValue.store(0.0f, std::memory_order_relaxed);
 }
@@ -129,10 +133,19 @@ void UserDspHost::process(const float* const* inputs,
     if (resetRequested.exchange(false, std::memory_order_relaxed) && activeRuntime->api->reset != nullptr)
         activeRuntime->api->reset(activeRuntime->instance);
 
+    if (activeRuntime->api->setMidiState != nullptr)
+        activeRuntime->api->setMidiState(activeRuntime->instance, &currentMidiState);
+
     for (int index = 0; index < activeRuntime->controlCount; ++index)
         activeRuntime->api->setControlValue(activeRuntime->instance, index, controlValues[static_cast<std::size_t>(index)].load(std::memory_order_relaxed));
 
     activeRuntime->api->process(activeRuntime->instance, inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+}
+
+void UserDspHost::setMidiInputState(const DspEduMidiState& midiState) noexcept
+{
+    currentMidiState = midiState;
+    currentMidiState.structSize = sizeof(DspEduMidiState);
 }
 
 void UserDspHost::setControlValue(int index, float value) noexcept
@@ -142,11 +155,6 @@ void UserDspHost::setControlValue(int index, float value) noexcept
 
     const auto clampedValue = juce::jlimit(0.0f, 1.0f, value);
     controlValues[static_cast<std::size_t>(index)].store(clampedValue, std::memory_order_relaxed);
-
-    const juce::ScopedLock lock(snapshotLock);
-
-    if (index < snapshot.controlCount)
-        snapshot.controls[static_cast<std::size_t>(index)].currentValue = clampedValue;
 }
 
 float UserDspHost::getControlValue(int index) const noexcept
@@ -196,7 +204,8 @@ juce::Result UserDspHost::loadModuleFromFile(const juce::File& moduleFile,
         || runtime->api->prepare == nullptr
         || runtime->api->reset == nullptr
         || runtime->api->process == nullptr
-        || runtime->api->setControlValue == nullptr)
+        || runtime->api->setControlValue == nullptr
+        || runtime->api->setMidiState == nullptr)
     {
         return juce::Result::fail("The module exports an incomplete DSP API.");
     }
@@ -282,8 +291,17 @@ void UserDspHost::reclaimRetiredRuntimes()
 
 UserDspHost::Snapshot UserDspHost::getSnapshot() const
 {
-    const juce::ScopedLock lock(snapshotLock);
-    return snapshot;
+    Snapshot snapshotCopy;
+
+    {
+        const juce::ScopedLock lock(snapshotLock);
+        snapshotCopy = snapshot;
+    }
+
+    for (int index = 0; index < snapshotCopy.controlCount; ++index)
+        snapshotCopy.controls[static_cast<std::size_t>(index)].currentValue = controlValues[static_cast<std::size_t>(index)].load(std::memory_order_relaxed);
+
+    return snapshotCopy;
 }
 
 void UserDspHost::commitPendingRuntimeSwap() noexcept

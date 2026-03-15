@@ -2,8 +2,19 @@
 
 #include <set>
 
+#include "util/AppSettings.h"
+
 namespace
 {
+enum class MidiMessageKind
+{
+    none = 0,
+    cc,
+    noteOn,
+    noteOff,
+    pitchWheel
+};
+
 double chooseNearestSampleRate(const juce::Array<double>& availableRates, double requestedRate)
 {
     if (availableRates.isEmpty())
@@ -79,6 +90,59 @@ juce::String formatChannelPair(int inputChannels, int outputChannels)
 {
     return juce::String(inputChannels) + " in / " + juce::String(outputChannels) + " out";
 }
+
+juce::String buildMidiMessageSummary(MidiMessageKind kind, int channel, int data1, int data2)
+{
+    if (kind == MidiMessageKind::none || channel <= 0)
+        return {};
+
+    const auto channelText = "Ch " + juce::String(channel);
+
+    switch (kind)
+    {
+        case MidiMessageKind::cc:
+            return "Last MIDI: CC " + juce::String(data1) + " = " + juce::String(data2) + " / " + channelText;
+
+        case MidiMessageKind::noteOn:
+        case MidiMessageKind::noteOff:
+        {
+            const auto noteName = juce::MidiMessage::getMidiNoteName(data1, true, true, 3);
+            return "Last MIDI: " + juce::String(kind == MidiMessageKind::noteOn ? "Note On " : "Note Off ")
+                 + noteName + " / " + channelText;
+        }
+
+        case MidiMessageKind::pitchWheel:
+            return "Last MIDI: Pitch Wheel " + juce::String(data2) + " / " + channelText;
+
+        case MidiMessageKind::none:
+            break;
+    }
+
+    return {};
+}
+
+bool controllerDefinitionsMatchRuntime(const std::vector<UserDspControllerDefinition>& definitions,
+                                       const UserDspHost::Snapshot& snapshot)
+{
+    if (! snapshot.hasActiveModule || snapshot.controlCount != static_cast<int>(definitions.size()))
+        return false;
+
+    for (int index = 0; index < snapshot.controlCount; ++index)
+    {
+        const auto& compiledControl = snapshot.controls[static_cast<std::size_t>(index)];
+        const auto& projectControl = definitions[static_cast<std::size_t>(index)];
+
+        if (! compiledControl.active
+            || compiledControl.type != projectControl.type
+            || compiledControl.label != projectControl.label
+            || compiledControl.codeName != projectControl.codeName)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 }
 
 AudioEngine::AudioEngine()
@@ -91,10 +155,16 @@ AudioEngine::AudioEngine()
 
     for (auto& slot : currentResolvedOutputSlots)
         slot.store(-1, std::memory_order_relaxed);
+
+    clearMidiBindingState();
+    resetMidiPerformanceState();
 }
 
 AudioEngine::~AudioEngine()
 {
+    if (midiInputDevice != nullptr)
+        midiInputDevice->stop();
+
     deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
 }
@@ -115,6 +185,14 @@ juce::Result AudioEngine::initialise()
     currentProjectAudioState.deviceSelection.outputDeviceName = initialSetup.outputDeviceName;
     currentProjectAudioState.cachedPreferred.preferredInputChannels = 1;
     currentProjectAudioState.cachedPreferred.preferredOutputChannels = 2;
+
+    const auto settings = appsettings::loadAppSettings();
+
+    if (const auto midiSelectionResult = applyMidiInputSelection(settings.selectedMidiInputDeviceName, true, true); midiSelectionResult.failed())
+    {
+        const juce::ScopedLock lock(stateLock);
+        currentMidiInputStatusText = midiSelectionResult.getErrorMessage();
+    }
 
     return applyProjectAudioState(currentProjectAudioState);
 }
@@ -146,12 +224,24 @@ AudioEngine::Snapshot AudioEngine::getSnapshot() const
     snapshot.outputDeviceName = currentOutputDeviceName;
     snapshot.availableInputDevices = availableInputDevices;
     snapshot.availableOutputDevices = availableOutputDevices;
+    snapshot.midiInputDeviceName = currentMidiInputDeviceName;
+    snapshot.midiInputStatusText = currentMidiInputStatusText;
+    snapshot.midiLastMessageKind = lastMidiMessageKind.load(std::memory_order_relaxed);
+    snapshot.midiLastMessageChannel = lastMidiMessageChannel.load(std::memory_order_relaxed);
+    snapshot.midiLastMessageData1 = lastMidiMessageData1.load(std::memory_order_relaxed);
+    snapshot.midiLastMessageData2 = lastMidiMessageData2.load(std::memory_order_relaxed);
+    snapshot.midiLastMessageText = buildMidiMessageSummary(static_cast<MidiMessageKind>(snapshot.midiLastMessageKind),
+                                                          snapshot.midiLastMessageChannel,
+                                                          snapshot.midiLastMessageData1,
+                                                          snapshot.midiLastMessageData2);
     snapshot.availableSampleRates = availableSampleRates;
     snapshot.availableBlockSizes = availableBlockSizes;
     snapshot.inputChannelNames = inputChannelNames;
     snapshot.outputChannelNames = outputChannelNames;
     snapshot.enabledInputChannels = enabledInputChannels;
     snapshot.enabledOutputChannels = enabledOutputChannels;
+    for (const auto& deviceInfo : availableMidiInputDevices)
+        snapshot.availableMidiInputDevices.add(deviceInfo.name);
     snapshot.inputRouting = currentProjectAudioState.deviceSelection.inputRouting;
     snapshot.outputRouting = currentProjectAudioState.deviceSelection.outputRouting;
     snapshot.statusMessages = currentStatusMessages;
@@ -175,6 +265,79 @@ juce::Result AudioEngine::applyProjectAudioState(const ProjectAudioState& state)
     publishResolvedDeviceState(resolvedState);
     requestResetForNextBlock();
     return juce::Result::ok();
+}
+
+juce::Result AudioEngine::setSelectedMidiInputDevice(const juce::String& deviceName)
+{
+    return applyMidiInputSelection(deviceName.trim(), true, false);
+}
+
+void AudioEngine::refreshMidiInputs()
+{
+    const auto availableDevices = juce::MidiInput::getAvailableDevices();
+    juce::String currentDeviceName;
+    bool hasOpenDevice = false;
+    bool currentDeviceAvailable = false;
+
+    {
+        const juce::ScopedLock lock(stateLock);
+        currentDeviceName = currentMidiInputDeviceName;
+        hasOpenDevice = midiInputDevice != nullptr;
+        availableMidiInputDevices = availableDevices;
+    }
+
+    for (const auto& device : availableDevices)
+        if (device.name == currentDeviceName)
+            currentDeviceAvailable = true;
+
+    if (currentDeviceName.isEmpty())
+    {
+        if (! availableDevices.isEmpty())
+            (void) applyMidiInputSelection({}, true, true);
+
+        return;
+    }
+
+    if (! currentDeviceAvailable)
+    {
+        (void) applyMidiInputSelection(currentDeviceName, true, true);
+        return;
+    }
+
+    if (! hasOpenDevice)
+        (void) applyMidiInputSelection(currentDeviceName, false, false);
+}
+
+void AudioEngine::setProjectControllerDefinitions(const std::vector<UserDspControllerDefinition>& definitions)
+{
+    const auto runtimeSnapshot = userDspHost.getSnapshot();
+    const auto layoutMatchesRuntime = controllerDefinitionsMatchRuntime(definitions, runtimeSnapshot);
+
+    for (int index = 0; index < DSP_EDU_USER_DSP_MAX_CONTROLS; ++index)
+    {
+        MidiBinding binding;
+
+        if (index < static_cast<int>(definitions.size()))
+            binding = definitions[static_cast<std::size_t>(index)].midiBinding;
+
+        writeMidiBindingState(index, binding, layoutMatchesRuntime);
+    }
+}
+
+float AudioEngine::getPreviewControlValue(int index) const noexcept
+{
+    if (! juce::isPositiveAndBelow(index, DSP_EDU_USER_DSP_MAX_CONTROLS))
+        return 0.0f;
+
+    return previewControlValues[static_cast<std::size_t>(index)].load(std::memory_order_relaxed);
+}
+
+std::uint32_t AudioEngine::getPreviewControlGeneration(int index) const noexcept
+{
+    if (! juce::isPositiveAndBelow(index, DSP_EDU_USER_DSP_MAX_CONTROLS))
+        return 0;
+
+    return previewControlGenerations[static_cast<std::size_t>(index)].load(std::memory_order_relaxed);
 }
 
 void AudioEngine::startTransport() noexcept
@@ -227,6 +390,38 @@ void AudioEngine::setWavPositionNormalized(double newPosition) noexcept
 void AudioEngine::setUserControlValue(int index, float value) noexcept
 {
     userDspHost.setControlValue(index, value);
+}
+
+void AudioEngine::armMidiLearn(int controlIndex, MidiBindingSource source) noexcept
+{
+    if (! juce::isPositiveAndBelow(controlIndex, DSP_EDU_USER_DSP_MAX_CONTROLS))
+    {
+        cancelMidiLearn();
+        return;
+    }
+
+    midiLearnCapturePending.store(false, std::memory_order_release);
+    armedMidiLearnControlIndex.store(controlIndex, std::memory_order_release);
+    armedMidiLearnSource.store(static_cast<int>(source), std::memory_order_release);
+}
+
+void AudioEngine::cancelMidiLearn() noexcept
+{
+    armedMidiLearnControlIndex.store(-1, std::memory_order_release);
+    armedMidiLearnSource.store(static_cast<int>(MidiBindingSource::none), std::memory_order_release);
+    midiLearnCapturePending.store(false, std::memory_order_release);
+}
+
+bool AudioEngine::consumeMidiLearnCapture(MidiLearnCapture& capture) noexcept
+{
+    if (! midiLearnCapturePending.exchange(false, std::memory_order_acq_rel))
+        return false;
+
+    capture.controlIndex = midiLearnCaptureControlIndex.load(std::memory_order_acquire);
+    capture.binding.source = static_cast<MidiBindingSource>(midiLearnCaptureSource.load(std::memory_order_acquire));
+    capture.binding.channel = midiLearnCaptureChannel.load(std::memory_order_acquire);
+    capture.binding.data1 = midiLearnCaptureData1.load(std::memory_order_acquire);
+    return true;
 }
 
 OscilloscopeBuffer& AudioEngine::getOscilloscopeBuffer() noexcept
@@ -290,6 +485,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     for (int channel = 0; channel < logicalOutputChannels; ++channel)
         outputPointers[static_cast<std::size_t>(channel)] = processedBuffer.getWritePointer(channel);
 
+    userDspHost.setMidiInputState(buildCurrentMidiState());
     userDspHost.process(inputPointers.data(), outputPointers.data(), logicalInputChannels, logicalOutputChannels, numSamples);
 
     oscilloscopeBuffer.pushSamples(reinterpret_cast<const float* const*>(outputPointers.data()), logicalOutputChannels, numSamples);
@@ -651,6 +847,234 @@ void AudioEngine::publishResolvedDeviceState(const ResolvedDeviceState& resolved
     requestedOutputChannels = resolvedState.requestedOutputChannels;
 }
 
+juce::Result AudioEngine::applyMidiInputSelection(const juce::String& requestedDeviceName,
+                                                  bool persistSelection,
+                                                  bool fallbackFromUnavailableDevice)
+{
+    const auto availableDevices = juce::MidiInput::getAvailableDevices();
+    juce::MidiDeviceInfo selectedDevice;
+    juce::String statusText;
+
+    auto findDeviceByName = [&availableDevices] (const juce::String& deviceName) -> juce::MidiDeviceInfo
+    {
+        for (const auto& device : availableDevices)
+            if (device.name == deviceName)
+                return device;
+
+        return {};
+    };
+
+    const auto requested = requestedDeviceName.trim();
+
+    if (requested.isNotEmpty())
+        selectedDevice = findDeviceByName(requested);
+
+    if (selectedDevice.identifier.isEmpty()
+        && ! availableDevices.isEmpty()
+        && (requested.isEmpty() || fallbackFromUnavailableDevice))
+    {
+        selectedDevice = availableDevices[0];
+
+        if (requested.isNotEmpty() && fallbackFromUnavailableDevice)
+        {
+            statusText = requested + " is unavailable. Using " + selectedDevice.name + " instead.";
+        }
+        else if (requested.isEmpty())
+        {
+            statusText = "Using " + selectedDevice.name + ".";
+        }
+    }
+
+    if (availableDevices.isEmpty())
+    {
+        if (midiInputDevice != nullptr)
+            midiInputDevice->stop();
+
+        midiInputDevice.reset();
+
+        {
+            const juce::ScopedLock lock(stateLock);
+            availableMidiInputDevices = availableDevices;
+            currentMidiInputDeviceName.clear();
+            currentMidiInputStatusText = "No MIDI input devices available.";
+        }
+
+        if (persistSelection)
+            persistMidiInputSelection({});
+
+        return juce::Result::ok();
+    }
+
+    if (selectedDevice.identifier.isEmpty())
+    {
+        const juce::ScopedLock lock(stateLock);
+        availableMidiInputDevices = availableDevices;
+        currentMidiInputStatusText = "The selected MIDI input device is unavailable.";
+        return juce::Result::fail("The selected MIDI input device is unavailable.");
+    }
+
+    auto newMidiInput = juce::MidiInput::openDevice(selectedDevice.identifier, this);
+
+    if (newMidiInput == nullptr)
+    {
+        const juce::ScopedLock lock(stateLock);
+        availableMidiInputDevices = availableDevices;
+        currentMidiInputStatusText = "Failed to open MIDI input " + selectedDevice.name + ".";
+        return juce::Result::fail("Failed to open MIDI input " + selectedDevice.name + ".");
+    }
+
+    newMidiInput->start();
+
+    if (midiInputDevice != nullptr)
+        midiInputDevice->stop();
+
+    midiInputDevice = std::move(newMidiInput);
+
+    {
+        const juce::ScopedLock lock(stateLock);
+        availableMidiInputDevices = availableDevices;
+        currentMidiInputDeviceName = selectedDevice.name;
+        currentMidiInputStatusText = statusText;
+    }
+
+    if (persistSelection)
+        persistMidiInputSelection(selectedDevice.name);
+
+    return juce::Result::ok();
+}
+
+void AudioEngine::persistMidiInputSelection(const juce::String& deviceName)
+{
+    AppSettingsState settings = appsettings::loadAppSettings();
+    settings.selectedMidiInputDeviceName = deviceName.trim();
+
+    if (const auto saveResult = appsettings::saveAppSettings(settings); saveResult.failed())
+    {
+        const juce::ScopedLock lock(stateLock);
+        currentMidiInputStatusText = saveResult.getErrorMessage();
+    }
+}
+
+void AudioEngine::writeMidiBindingState(int index, const MidiBinding& binding, bool routeToRuntime) noexcept
+{
+    if (! juce::isPositiveAndBelow(index, DSP_EDU_USER_DSP_MAX_CONTROLS))
+        return;
+
+    const auto sanitisedBinding = midi::sanitiseMidiBinding(binding);
+    midiBindingSources[static_cast<std::size_t>(index)].store(static_cast<int>(MidiBindingSource::none), std::memory_order_release);
+    midiBindingChannels[static_cast<std::size_t>(index)].store(sanitisedBinding.channel, std::memory_order_release);
+    midiBindingData1[static_cast<std::size_t>(index)].store(sanitisedBinding.data1, std::memory_order_release);
+    midiBindingRoutesToRuntime[static_cast<std::size_t>(index)].store(routeToRuntime && midi::isBindingActive(sanitisedBinding) ? 1 : 0,
+                                                                      std::memory_order_release);
+    midiBindingSources[static_cast<std::size_t>(index)].store(static_cast<int>(sanitisedBinding.source), std::memory_order_release);
+}
+
+void AudioEngine::clearMidiBindingState() noexcept
+{
+    for (int index = 0; index < DSP_EDU_USER_DSP_MAX_CONTROLS; ++index)
+    {
+        writeMidiBindingState(index, {}, false);
+        previewControlValues[static_cast<std::size_t>(index)].store(0.0f, std::memory_order_relaxed);
+        previewControlGenerations[static_cast<std::size_t>(index)].store(0, std::memory_order_relaxed);
+    }
+}
+
+void AudioEngine::publishPreviewControlValue(int index, float value) noexcept
+{
+    if (! juce::isPositiveAndBelow(index, DSP_EDU_USER_DSP_MAX_CONTROLS))
+        return;
+
+    previewControlValues[static_cast<std::size_t>(index)].store(juce::jlimit(0.0f, 1.0f, value), std::memory_order_relaxed);
+    previewControlGenerations[static_cast<std::size_t>(index)].fetch_add(1u, std::memory_order_relaxed);
+}
+
+void AudioEngine::resetMidiPerformanceState() noexcept
+{
+    midiPerformanceState.clear();
+    publishMidiPerformanceState();
+}
+
+void AudioEngine::publishMidiPerformanceState() noexcept
+{
+    const auto& state = midiPerformanceState.getState();
+    midiPerformanceStateRevision.fetch_add(1u, std::memory_order_acq_rel);
+    midiStateVoiceCount.store(state.voiceCount, std::memory_order_relaxed);
+    midiStateGate.store(state.gate, std::memory_order_relaxed);
+    midiStateChannel.store(state.channel, std::memory_order_relaxed);
+    midiStateNoteNumber.store(state.noteNumber, std::memory_order_relaxed);
+    midiStateVelocity.store(state.velocity, std::memory_order_relaxed);
+    midiStatePitchWheel.store(state.pitchWheel, std::memory_order_relaxed);
+
+    for (int channel = 0; channel < DSP_EDU_USER_DSP_MAX_MIDI_CHANNELS; ++channel)
+        midiStateChannelPitchWheels[static_cast<std::size_t>(channel)].store(state.channelPitchWheel[static_cast<std::size_t>(channel)],
+                                                                             std::memory_order_relaxed);
+
+    for (int voiceIndex = 0; voiceIndex < DSP_EDU_USER_DSP_MAX_MIDI_VOICES; ++voiceIndex)
+    {
+        const auto& voice = state.voices[static_cast<std::size_t>(voiceIndex)];
+        midiStateVoiceActive[static_cast<std::size_t>(voiceIndex)].store(voice.active, std::memory_order_relaxed);
+        midiStateVoiceChannels[static_cast<std::size_t>(voiceIndex)].store(voice.channel, std::memory_order_relaxed);
+        midiStateVoiceNotes[static_cast<std::size_t>(voiceIndex)].store(voice.noteNumber, std::memory_order_relaxed);
+        midiStateVoiceVelocities[static_cast<std::size_t>(voiceIndex)].store(voice.velocity, std::memory_order_relaxed);
+        midiStateVoiceOrders[static_cast<std::size_t>(voiceIndex)].store(voice.order, std::memory_order_relaxed);
+    }
+
+    midiPerformanceStateRevision.fetch_add(1u, std::memory_order_release);
+}
+
+DspEduMidiState AudioEngine::buildCurrentMidiState() const noexcept
+{
+    DspEduMidiState midiState {};
+    midiState.structSize = sizeof(DspEduMidiState);
+
+    while (true)
+    {
+        const auto revisionBefore = midiPerformanceStateRevision.load(std::memory_order_acquire);
+
+        if ((revisionBefore & 1u) != 0u)
+            continue;
+
+        midiState.voiceCount = midiStateVoiceCount.load(std::memory_order_relaxed);
+        midiState.gate = midiStateGate.load(std::memory_order_relaxed);
+        midiState.channel = midiStateChannel.load(std::memory_order_relaxed);
+        midiState.noteNumber = midiStateNoteNumber.load(std::memory_order_relaxed);
+        midiState.velocity = midiStateVelocity.load(std::memory_order_relaxed);
+        midiState.pitchWheel = midiStatePitchWheel.load(std::memory_order_relaxed);
+
+        for (int channel = 0; channel < DSP_EDU_USER_DSP_MAX_MIDI_CHANNELS; ++channel)
+            midiState.channelPitchWheel[static_cast<std::size_t>(channel)] =
+                midiStateChannelPitchWheels[static_cast<std::size_t>(channel)].load(std::memory_order_relaxed);
+
+        for (int voiceIndex = 0; voiceIndex < DSP_EDU_USER_DSP_MAX_MIDI_VOICES; ++voiceIndex)
+        {
+            auto& voice = midiState.voices[static_cast<std::size_t>(voiceIndex)];
+            voice.active = midiStateVoiceActive[static_cast<std::size_t>(voiceIndex)].load(std::memory_order_relaxed);
+            voice.channel = midiStateVoiceChannels[static_cast<std::size_t>(voiceIndex)].load(std::memory_order_relaxed);
+            voice.noteNumber = midiStateVoiceNotes[static_cast<std::size_t>(voiceIndex)].load(std::memory_order_relaxed);
+            voice.velocity = midiStateVoiceVelocities[static_cast<std::size_t>(voiceIndex)].load(std::memory_order_relaxed);
+            voice.order = midiStateVoiceOrders[static_cast<std::size_t>(voiceIndex)].load(std::memory_order_relaxed);
+        }
+
+        const auto revisionAfter = midiPerformanceStateRevision.load(std::memory_order_acquire);
+
+        if (revisionBefore == revisionAfter)
+            return midiState;
+    }
+}
+
+float AudioEngine::normalisePitchWheelValue(int rawPitchWheelValue) const noexcept
+{
+    rawPitchWheelValue = juce::jlimit(0, 16383, rawPitchWheelValue);
+
+    if (rawPitchWheelValue == 8192)
+        return 0.0f;
+
+    if (rawPitchWheelValue < 8192)
+        return static_cast<float>(rawPitchWheelValue - 8192) / 8192.0f;
+
+    return static_cast<float>(rawPitchWheelValue - 8192) / 8191.0f;
+}
+
 void AudioEngine::routeHardwareInput(const float* const* inputChannelData,
                                      int numInputChannels,
                                      int logicalInputChannels,
@@ -742,6 +1166,105 @@ void AudioEngine::routeProcessedToOutputs(float* const* outputChannelData,
 
     for (int sample = 0; sample < numSamples; ++sample)
         outputChannelData[mixSlot][sample] = 0.5f * (left[sample] + right[sample]);
+}
+
+void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message)
+{
+    if (message.isController())
+    {
+        lastMidiMessageKind.store(static_cast<int>(MidiMessageKind::cc), std::memory_order_relaxed);
+        lastMidiMessageChannel.store(message.getChannel(), std::memory_order_relaxed);
+        lastMidiMessageData1.store(message.getControllerNumber(), std::memory_order_relaxed);
+        lastMidiMessageData2.store(message.getControllerValue(), std::memory_order_relaxed);
+    }
+    else if (message.isNoteOn())
+    {
+        lastMidiMessageKind.store(static_cast<int>(MidiMessageKind::noteOn), std::memory_order_relaxed);
+        lastMidiMessageChannel.store(message.getChannel(), std::memory_order_relaxed);
+        lastMidiMessageData1.store(message.getNoteNumber(), std::memory_order_relaxed);
+        lastMidiMessageData2.store(static_cast<int>(message.getVelocity()), std::memory_order_relaxed);
+        midiPerformanceState.noteOn(message.getChannel(),
+                                    message.getNoteNumber(),
+                                    static_cast<float>(message.getVelocity()) / 127.0f);
+        publishMidiPerformanceState();
+    }
+    else if (message.isNoteOff())
+    {
+        lastMidiMessageKind.store(static_cast<int>(MidiMessageKind::noteOff), std::memory_order_relaxed);
+        lastMidiMessageChannel.store(message.getChannel(), std::memory_order_relaxed);
+        lastMidiMessageData1.store(message.getNoteNumber(), std::memory_order_relaxed);
+        lastMidiMessageData2.store(0, std::memory_order_relaxed);
+        midiPerformanceState.noteOff(message.getChannel(), message.getNoteNumber());
+        publishMidiPerformanceState();
+    }
+    else if (message.isPitchWheel())
+    {
+        lastMidiMessageKind.store(static_cast<int>(MidiMessageKind::pitchWheel), std::memory_order_relaxed);
+        lastMidiMessageChannel.store(message.getChannel(), std::memory_order_relaxed);
+        lastMidiMessageData1.store(-1, std::memory_order_relaxed);
+        lastMidiMessageData2.store(message.getPitchWheelValue(), std::memory_order_relaxed);
+        midiPerformanceState.setPitchWheel(message.getChannel(),
+                                           normalisePitchWheelValue(message.getPitchWheelValue()));
+        publishMidiPerformanceState();
+    }
+
+    const auto armedSource = static_cast<MidiBindingSource>(armedMidiLearnSource.load(std::memory_order_acquire));
+    const auto armedControlIndex = armedMidiLearnControlIndex.load(std::memory_order_acquire);
+
+    if (juce::isPositiveAndBelow(armedControlIndex, DSP_EDU_USER_DSP_MAX_CONTROLS))
+    {
+        MidiBinding capturedBinding;
+
+        auto captureMessage = [&]() -> bool
+        {
+            if (armedSource != MidiBindingSource::none)
+                return midi::tryCaptureMidiLearnBinding(armedSource, message, capturedBinding);
+
+            if (message.isController())
+                return midi::tryCaptureMidiLearnBinding(MidiBindingSource::cc, message, capturedBinding);
+
+            if (message.isNoteOn())
+                return midi::tryCaptureMidiLearnBinding(MidiBindingSource::noteGate, message, capturedBinding);
+
+            if (message.isPitchWheel())
+                return midi::tryCaptureMidiLearnBinding(MidiBindingSource::pitchWheel, message, capturedBinding);
+
+            return false;
+        };
+
+        if (captureMessage())
+        {
+            midiLearnCaptureControlIndex.store(armedControlIndex, std::memory_order_release);
+            midiLearnCaptureSource.store(static_cast<int>(capturedBinding.source), std::memory_order_release);
+            midiLearnCaptureChannel.store(capturedBinding.channel, std::memory_order_release);
+            midiLearnCaptureData1.store(capturedBinding.data1, std::memory_order_release);
+            armedMidiLearnControlIndex.store(-1, std::memory_order_release);
+            armedMidiLearnSource.store(static_cast<int>(MidiBindingSource::none), std::memory_order_release);
+            midiLearnCapturePending.store(true, std::memory_order_release);
+        }
+    }
+
+    for (int index = 0; index < DSP_EDU_USER_DSP_MAX_CONTROLS; ++index)
+    {
+        MidiBinding binding;
+        binding.source = static_cast<MidiBindingSource>(midiBindingSources[static_cast<std::size_t>(index)].load(std::memory_order_acquire));
+
+        if (binding.source == MidiBindingSource::none)
+            continue;
+
+        binding.channel = midiBindingChannels[static_cast<std::size_t>(index)].load(std::memory_order_acquire);
+        binding.data1 = midiBindingData1[static_cast<std::size_t>(index)].load(std::memory_order_acquire);
+
+        float mappedValue = 0.0f;
+
+        if (midi::tryMapMessageToBindingValue(message, binding, mappedValue))
+        {
+            publishPreviewControlValue(index, mappedValue);
+
+            if (midiBindingRoutesToRuntime[static_cast<std::size_t>(index)].load(std::memory_order_acquire) != 0)
+                userDspHost.setControlValue(index, mappedValue);
+        }
+    }
 }
 
 void AudioEngine::updateStatusTexts(Snapshot& snapshot) const

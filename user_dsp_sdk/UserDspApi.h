@@ -8,11 +8,13 @@
     #define DSP_EDU_EXPORT extern "C"
 #endif
 
-static constexpr std::uint32_t DSP_EDU_USER_DSP_API_VERSION = 3u;
+static constexpr std::uint32_t DSP_EDU_USER_DSP_API_VERSION = 4u;
 static constexpr int DSP_EDU_USER_DSP_MAX_CONTROLS = 32;
 static constexpr int DSP_EDU_USER_DSP_MAX_PARAMETERS = DSP_EDU_USER_DSP_MAX_CONTROLS;
 static constexpr int DSP_EDU_USER_DSP_TEXT_CAPACITY = 32;
 static constexpr int DSP_EDU_USER_DSP_MAX_AUDIO_CHANNELS = 2;
+static constexpr int DSP_EDU_USER_DSP_MAX_MIDI_VOICES = 16;
+static constexpr int DSP_EDU_USER_DSP_MAX_MIDI_CHANNELS = 16;
 
 struct DspEduParameterInfo
 {
@@ -41,6 +43,28 @@ struct DspEduProcessSpec
     int activeOutputChannels = 0;
 };
 
+struct DspEduMidiVoice
+{
+    int active = 0;
+    int channel = 1;
+    int noteNumber = -1;
+    float velocity = 0.0f;
+    std::uint32_t order = 0;
+};
+
+struct DspEduMidiState
+{
+    std::uint32_t structSize = sizeof(DspEduMidiState);
+    int voiceCount = 0;
+    int gate = 0;
+    int channel = 1;
+    int noteNumber = -1;
+    float velocity = 0.0f;
+    float pitchWheel = 0.0f;
+    float channelPitchWheel[DSP_EDU_USER_DSP_MAX_MIDI_CHANNELS] {};
+    DspEduMidiVoice voices[DSP_EDU_USER_DSP_MAX_MIDI_VOICES] {};
+};
+
 using DspEduInstanceHandle = void*;
 
 struct DspEduApi
@@ -64,6 +88,7 @@ struct DspEduApi
                     int numSamples) noexcept = nullptr;
     void (*setParameter)(DspEduInstanceHandle, int parameterIndex, float value) noexcept = nullptr;
     void (*setControlValue)(DspEduInstanceHandle, int controlIndex, float value) noexcept = nullptr;
+    void (*setMidiState)(DspEduInstanceHandle, const DspEduMidiState*) noexcept = nullptr;
 };
 
 DSP_EDU_EXPORT const DspEduApi* dspedu_get_api() noexcept;
@@ -363,6 +388,13 @@ void setControlValue(ProcessorType& processor, int controlIndex, float value)
     else if constexpr (requires { processor.setParameter(controlIndex, value); })
         processor.setParameter(controlIndex, value);
 }
+
+template <typename ProcessorType>
+void setMidiState(ProcessorType& processor, const DspEduMidiState& state)
+{
+    if constexpr (requires { processor.setMidiState(state); })
+        processor.setMidiState(state);
+}
 } // namespace detail
 
 template <typename ProcessorType>
@@ -568,6 +600,23 @@ struct Adapter
         }
     }
 
+    static void setMidiState(DspEduInstanceHandle handle, const DspEduMidiState* state) noexcept
+    {
+        if (auto* processor = static_cast<ProcessorType*> (handle); processor != nullptr && state != nullptr)
+        {
+            auto localState = *state;
+            localState.structSize = sizeof(DspEduMidiState);
+
+            try
+            {
+                detail::setMidiState(*processor, localState);
+            }
+            catch (...)
+            {
+            }
+        }
+    }
+
     static const DspEduApi api;
 };
 
@@ -586,7 +635,8 @@ const DspEduApi Adapter<ProcessorType>::api
     &Adapter<ProcessorType>::reset,
     &Adapter<ProcessorType>::process,
     &Adapter<ProcessorType>::setParameter,
-    &Adapter<ProcessorType>::setControlValue
+    &Adapter<ProcessorType>::setControlValue,
+    &Adapter<ProcessorType>::setMidiState
 };
 } // namespace dspedu
 

@@ -14,11 +14,19 @@ inline juce::File getLocalAppDataRoot()
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
 }
 
+inline juce::File getAppRoot()
+{
+    return getLocalAppDataRoot().getChildFile("DSP Education Stand");
+}
+
 inline juce::File getWorkspaceRoot()
 {
-    return getLocalAppDataRoot()
-        .getChildFile("DSP Education Stand")
-        .getChildFile("user_dsp");
+    return getAppRoot().getChildFile("user_dsp");
+}
+
+inline juce::File getSettingsFile()
+{
+    return getAppRoot().getChildFile("settings.json");
 }
 
 inline juce::File findProjectResource(const juce::String& relativePath)

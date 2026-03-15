@@ -9,6 +9,16 @@ namespace
 constexpr int tileWidth = 172;
 constexpr int tileHeight = 206;
 constexpr int tileGap = 10;
+constexpr int textCommitDelayMs = 280;
+
+constexpr int typeMenuKnobId = 101;
+constexpr int typeMenuButtonId = 102;
+constexpr int typeMenuToggleId = 103;
+
+constexpr int midiSourceBaseId = 200;
+constexpr int midiChannelBaseId = 300;
+constexpr int midiDataBaseId = 400;
+constexpr int midiClearId = 900;
 
 void configureSectionLabel(juce::Label& label, const juce::String& text)
 {
@@ -38,59 +48,106 @@ void configureTextButton(juce::TextButton& button)
     button.setColour(juce::TextButton::textColourOnId, ide::text);
 }
 
-void configureAlertWindowLookAndFeel(juce::AlertWindow& window, juce::LookAndFeel* lookAndFeel)
+void configureInlineTextEditor(juce::TextEditor& editor, float fontHeight)
 {
-    if (lookAndFeel != nullptr)
-        window.setLookAndFeel(lookAndFeel);
+    editor.setMultiLine(false);
+    editor.setReturnKeyStartsNewLine(false);
+    editor.setJustification(juce::Justification::centredLeft);
+    editor.setScrollbarsShown(false);
+    editor.setFont(juce::Font(juce::FontOptions(fontHeight, juce::Font::plain)));
+    editor.setIndents(8, 6);
+    editor.setColour(juce::TextEditor::backgroundColourId, ide::active);
+    editor.setColour(juce::TextEditor::textColourId, ide::text);
+    editor.setColour(juce::TextEditor::highlightColourId, ide::border);
+    editor.setColour(juce::TextEditor::highlightedTextColourId, ide::text);
+    editor.setColour(juce::TextEditor::outlineColourId, ide::border);
+    editor.setColour(juce::TextEditor::focusedOutlineColourId, ide::constant);
+    editor.setColour(juce::TextEditor::shadowColourId, juce::Colours::transparentBlack);
 }
 
-void configureAlertTextEditor(juce::TextEditor* editor)
+UserDspControllerType menuIdToControllerType(int menuId)
 {
-    if (editor == nullptr)
-        return;
-
-    editor->setColour(juce::TextEditor::backgroundColourId, ide::active);
-    editor->setColour(juce::TextEditor::textColourId, ide::text);
-    editor->setColour(juce::TextEditor::highlightColourId, ide::border);
-    editor->setColour(juce::TextEditor::highlightedTextColourId, ide::text);
-    editor->setColour(juce::TextEditor::outlineColourId, ide::border);
-    editor->setColour(juce::TextEditor::focusedOutlineColourId, ide::constant);
+    switch (menuId)
+    {
+        case typeMenuButtonId: return UserDspControllerType::button;
+        case typeMenuToggleId: return UserDspControllerType::toggle;
+        default: return UserDspControllerType::knob;
+    }
 }
 
-void configureAlertComboBox(juce::ComboBox* combo)
+bool isNoteBindingSource(MidiBindingSource source) noexcept
 {
-    if (combo == nullptr)
-        return;
-
-    combo->setScrollWheelEnabled(false);
-    combo->setColour(juce::ComboBox::backgroundColourId, ide::active);
-    combo->setColour(juce::ComboBox::textColourId, ide::text);
-    combo->setColour(juce::ComboBox::outlineColourId, ide::border);
-    combo->setColour(juce::ComboBox::buttonColourId, ide::active);
-    combo->setColour(juce::ComboBox::arrowColourId, ide::textSecondary);
-    combo->setColour(juce::ComboBox::focusedOutlineColourId, ide::constant);
+    return source == MidiBindingSource::noteGate
+        || source == MidiBindingSource::noteVelocity
+        || source == MidiBindingSource::noteNumber;
 }
 
-int controllerTypeToComboId(UserDspControllerType type)
+MidiBinding defaultMidiBindingForSource(MidiBindingSource source) noexcept
+{
+    MidiBinding binding;
+    binding.source = source;
+    binding.channel = 1;
+
+    if (source == MidiBindingSource::pitchWheel)
+        binding.data1 = -1;
+    else if (isNoteBindingSource(source))
+        binding.data1 = 60;
+    else
+        binding.data1 = 0;
+
+    return binding;
+}
+
+MidiBinding sourceMenuIdToBinding(int menuId, const MidiBinding& currentBinding)
+{
+    const auto requestedSource = [menuId]() noexcept
+    {
+        switch (menuId)
+        {
+            case midiSourceBaseId + 1: return MidiBindingSource::none;
+            case midiSourceBaseId + 2: return MidiBindingSource::cc;
+            case midiSourceBaseId + 3: return MidiBindingSource::noteGate;
+            case midiSourceBaseId + 4: return MidiBindingSource::noteVelocity;
+            case midiSourceBaseId + 5: return MidiBindingSource::noteNumber;
+            case midiSourceBaseId + 6: return MidiBindingSource::pitchWheel;
+            default:                   return MidiBindingSource::none;
+        }
+    }();
+
+    if (requestedSource == MidiBindingSource::none)
+        return {};
+
+    auto binding = midi::isBindingActive(currentBinding)
+                     ? midi::sanitiseMidiBinding(currentBinding)
+                     : defaultMidiBindingForSource(requestedSource);
+
+    if (binding.source != requestedSource)
+    {
+        const bool preservingNoteNumber = isNoteBindingSource(binding.source) && isNoteBindingSource(requestedSource);
+        binding = defaultMidiBindingForSource(requestedSource);
+        binding.channel = midi::isBindingActive(currentBinding) ? currentBinding.channel : 1;
+
+        if (preservingNoteNumber)
+            binding.data1 = juce::jlimit(0, 127, currentBinding.data1);
+    }
+
+    binding.source = requestedSource;
+    return midi::sanitiseMidiBinding(binding);
+}
+
+juce::String buildEditValuePreview(UserDspControllerType type, float value)
 {
     switch (type)
     {
-        case UserDspControllerType::knob:   return 1;
-        case UserDspControllerType::button: return 2;
-        case UserDspControllerType::toggle: return 3;
+        case UserDspControllerType::knob:
+            return juce::String(value, 3);
+
+        case UserDspControllerType::button:
+        case UserDspControllerType::toggle:
+            return value >= 0.5f ? "On" : "Off";
     }
 
-    return 1;
-}
-
-UserDspControllerType comboIdToControllerType(int comboId)
-{
-    switch (comboId)
-    {
-        case 2: return UserDspControllerType::button;
-        case 3: return UserDspControllerType::toggle;
-        default: return UserDspControllerType::knob;
-    }
+    return {};
 }
 
 bool definitionsMatchSnapshot(const std::vector<UserDspControllerDefinition>& definitions,
@@ -143,44 +200,53 @@ std::vector<float> remapPreviewValues(const std::vector<UserDspControllerDefinit
     return nextValues;
 }
 
-bool showControllerEditorDialog(UserDspControllerDefinition& definition, juce::LookAndFeel* lookAndFeel)
+juce::String buildDisplayedMidiSummary(const UserDspControllerDefinition& definition)
 {
-    juce::AlertWindow window("Edit Controller",
-                             "Set the UI label, code name, controller type, and future MIDI mapping hint.",
-                             juce::MessageBoxIconType::NoIcon);
-    configureAlertWindowLookAndFeel(window, lookAndFeel);
-    window.addTextEditor("label", definition.label, "Label");
-    window.addTextEditor("codeName", definition.codeName, "Code Name");
-    window.addTextEditor("midiBindingHint", definition.midiBindingHint, "MIDI Mapping Hint");
-    configureAlertTextEditor(window.getTextEditor("label"));
-    configureAlertTextEditor(window.getTextEditor("codeName"));
-    configureAlertTextEditor(window.getTextEditor("midiBindingHint"));
+    if (midi::isBindingActive(definition.midiBinding))
+        return midi::buildMidiBindingSummary(definition.midiBinding);
 
-    window.addComboBox("type", { "Knob", "Button", "Toggle" }, "Type");
+    return definition.midiBindingHint;
+}
 
-    if (auto* combo = window.getComboBoxComponent("type"); combo != nullptr)
+void populateMidiDataMenu(juce::PopupMenu& parentMenu, MidiBindingSource source, int selectedData1)
+{
+    for (int groupStart = 0; groupStart < 128; groupStart += 16)
     {
-        configureAlertComboBox(combo);
-        combo->setSelectedId(controllerTypeToComboId(definition.type), juce::dontSendNotification);
+        juce::PopupMenu groupMenu;
+        const int groupEnd = juce::jmin(127, groupStart + 15);
+
+        for (int value = groupStart; value <= groupEnd; ++value)
+        {
+            juce::String itemLabel;
+
+            if (source == MidiBindingSource::cc)
+            {
+                itemLabel = "CC " + juce::String(value);
+            }
+            else
+            {
+                itemLabel = juce::MidiMessage::getMidiNoteName(value, true, true, 3)
+                          + " (" + juce::String(value) + ")";
+            }
+
+            groupMenu.addItem(midiDataBaseId + value + 1, itemLabel, true, value == selectedData1);
+        }
+
+        juce::String groupLabel;
+
+        if (source == MidiBindingSource::cc)
+        {
+            groupLabel = juce::String(groupStart) + "-" + juce::String(groupEnd);
+        }
+        else
+        {
+            groupLabel = juce::MidiMessage::getMidiNoteName(groupStart, true, true, 3)
+                       + " - "
+                       + juce::MidiMessage::getMidiNoteName(groupEnd, true, true, 3);
+        }
+
+        parentMenu.addSubMenu(groupLabel, groupMenu);
     }
-
-    window.addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    window.addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-
-    if (window.runModalLoop() != 1)
-        return false;
-
-    definition.label = window.getTextEditor("label")->getText().trim();
-    definition.codeName = userdsp::sanitiseControllerCodeName(window.getTextEditor("codeName")->getText());
-    definition.midiBindingHint = window.getTextEditor("midiBindingHint")->getText().trim();
-
-    if (definition.codeName.isEmpty())
-        definition.codeName = userdsp::sanitiseControllerCodeName(definition.label);
-
-    if (auto* combo = window.getComboBoxComponent("type"); combo != nullptr)
-        definition.type = comboIdToControllerType(combo->getSelectedId());
-
-    return true;
 }
 
 enum class ControlsDisplayMode
@@ -194,7 +260,10 @@ bool showDeleteDialog(const juce::String& label, juce::LookAndFeel* lookAndFeel)
     juce::AlertWindow window("Delete Controller",
                              "Delete controller \"" + label + "\"?",
                              juce::MessageBoxIconType::WarningIcon);
-    configureAlertWindowLookAndFeel(window, lookAndFeel);
+
+    if (lookAndFeel != nullptr)
+        window.setLookAndFeel(lookAndFeel);
+
     window.addButton("Delete", 1, juce::KeyPress(juce::KeyPress::returnKey));
     window.addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
     return window.runModalLoop() == 1;
@@ -284,41 +353,62 @@ public:
         setButtonText(getToggleState() ? "On" : "Off");
     }
 };
+
 } // namespace
 
-class ControllerTileComponent final : public juce::Component
+class ControllerTileComponent final : public juce::Component,
+                                      private juce::Timer
 {
 public:
-    ControllerTileComponent(std::function<void(int)> onEdit,
+    ControllerTileComponent(std::function<juce::Result(int, const UserDspControllerDefinition&)> onDefinitionChanged,
+                            std::function<void(int, MidiBindingSource)> onMidiLearnRequested,
+                            std::function<void(int)> onMidiLearnCancelled,
                             std::function<void(int, int)> onMove,
                             std::function<void(int)> onDelete,
                             std::function<void(int, float)> onValueChanged)
-        : editRequested(std::move(onEdit)),
+        : definitionChanged(std::move(onDefinitionChanged)),
+          midiLearnRequested(std::move(onMidiLearnRequested)),
+          midiLearnCancelled(std::move(onMidiLearnCancelled)),
           moveRequested(std::move(onMove)),
           deleteRequested(std::move(onDelete)),
           valueChanged(std::move(onValueChanged))
     {
         configureBodyLabel(labelLabel, {}, juce::Justification::centredLeft, 15.0f, true);
         labelLabel.setColour(juce::Label::textColourId, ide::text);
-        configureBodyLabel(codeNameLabel, {}, juce::Justification::centredLeft, 12.5f, false);
-        configureBodyLabel(typeLabel, {}, juce::Justification::centredLeft, 12.0f, false);
-        configureBodyLabel(midiLabel, {}, juce::Justification::centredLeft, 12.0f, false);
+
+        configureBodyLabel(codePrefixLabel, "controls.", juce::Justification::centredLeft, 12.0f, false);
+        codePrefixLabel.setColour(juce::Label::textColourId, ide::textMuted);
+
+        configureBodyLabel(valuePreviewLabel, {}, juce::Justification::centred, 14.0f, false);
+        valuePreviewLabel.setColour(juce::Label::textColourId, ide::text);
+        valuePreviewLabel.setColour(juce::Label::backgroundColourId, ide::active);
+        valuePreviewLabel.setColour(juce::Label::outlineColourId, ide::border);
+
         configureBodyLabel(runtimeLabel, {}, juce::Justification::centredLeft, 12.0f, false);
 
-        configureTextButton(editButton);
+        configureInlineTextEditor(labelEditor, 15.0f);
+        configureInlineTextEditor(codeNameEditor, 12.5f);
+        labelEditor.setTextToShowWhenEmpty("Controller name", ide::textMuted);
+        codeNameEditor.setTextToShowWhenEmpty("name", ide::textMuted);
+
+        configureTextButton(typeButton);
+        configureTextButton(midiButton);
+        configureTextButton(learnButton);
+        configureTextButton(clearButton);
         configureTextButton(moveLeftButton);
         configureTextButton(moveRightButton);
         configureTextButton(deleteButton);
         configureTextButton(momentaryButton);
         configureTextButton(toggleButton);
 
-        editButton.setButtonText("...");
         moveLeftButton.setButtonText("<");
         moveRightButton.setButtonText(">");
-        deleteButton.setButtonText("X");
+        deleteButton.setButtonText("Del");
+        learnButton.setButtonText("Learn");
+        clearButton.setButtonText("Clear");
 
         knobSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        knobSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 82, 24);
+        knobSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 88, 24);
         knobSlider.setTextBoxIsEditable(true);
         knobSlider.setRange(0.0, 1.0, 0.001);
         knobSlider.setNumDecimalPlacesToDisplay(3);
@@ -328,7 +418,6 @@ public:
         knobSlider.setColour(juce::Slider::textBoxTextColourId, ide::text);
         knobSlider.setColour(juce::Slider::textBoxBackgroundColourId, ide::active);
         knobSlider.setColour(juce::Slider::textBoxOutlineColourId, ide::border);
-
         knobSlider.onValueChange = [this]
         {
             if (! suppressValueCallbacks && valueChanged != nullptr)
@@ -348,10 +437,38 @@ public:
                 valueChanged(controllerIndex, isOn ? 1.0f : 0.0f);
         };
 
-        editButton.onClick = [this]
+        labelEditor.onTextChange = [this] { scheduleTextCommit(); };
+        codeNameEditor.onTextChange = [this] { scheduleTextCommit(); };
+        labelEditor.onReturnKey = [this] { commitTextEditorsNow(); };
+        codeNameEditor.onReturnKey = [this] { commitTextEditorsNow(); };
+        labelEditor.onFocusLost = [this] { commitTextEditorsNow(); };
+        codeNameEditor.onFocusLost = [this] { commitTextEditorsNow(); };
+        labelEditor.onEscapeKey = [this] { revertTextEditorsToDefinition(); };
+        codeNameEditor.onEscapeKey = [this] { revertTextEditorsToDefinition(); };
+
+        typeButton.onClick = [this] { showTypeMenu(); };
+        midiButton.onClick = [this] { showMidiMenu(); };
+
+        learnButton.onClick = [this]
         {
-            if (editRequested != nullptr)
-                editRequested(controllerIndex);
+            if (learnArmed)
+            {
+                if (midiLearnCancelled != nullptr)
+                    midiLearnCancelled(controllerIndex);
+
+                return;
+            }
+
+            if (midiLearnRequested != nullptr)
+                midiLearnRequested(controllerIndex, definition.midiBinding.source);
+        };
+
+        clearButton.onClick = [this]
+        {
+            auto updatedDefinition = definition;
+            updatedDefinition.midiBinding = {};
+            updatedDefinition.midiBindingHint.clear();
+            applyDefinitionChange(updatedDefinition);
         };
 
         moveLeftButton.onClick = [this]
@@ -373,11 +490,18 @@ public:
         };
 
         for (auto* component : std::initializer_list<juce::Component*>
-             { &labelLabel, &codeNameLabel, &typeLabel, &midiLabel, &runtimeLabel,
-               &editButton, &moveLeftButton, &moveRightButton, &deleteButton, &knobSlider, &momentaryButton, &toggleButton })
+             { &labelLabel, &codePrefixLabel, &valuePreviewLabel, &runtimeLabel,
+               &labelEditor, &codeNameEditor, &typeButton, &midiButton, &learnButton, &clearButton,
+               &moveLeftButton, &moveRightButton, &deleteButton,
+               &knobSlider, &momentaryButton, &toggleButton })
         {
             addAndMakeVisible(component);
         }
+    }
+
+    ~ControllerTileComponent() override
+    {
+        stopTimer();
     }
 
     void updateFromState(int index,
@@ -386,46 +510,30 @@ public:
                          ControlsDisplayMode nextMode,
                          bool isRuntimeLinked,
                          float displayValue,
-                         bool compileRequired)
+                         bool compileRequired,
+                         bool isMidiLearnArmed,
+                         bool hasMidiInput)
     {
         controllerIndex = index;
         definition = controllerDefinition;
         displayMode = nextMode;
         runtimeLinked = isRuntimeLinked;
         layoutStale = compileRequired;
+        learnArmed = isMidiLearnArmed;
+        midiInputAvailable = hasMidiInput;
+        currentDisplayValue = displayValue;
 
-        const auto isEditMode = displayMode == ControlsDisplayMode::edit;
+        if (! textEditorsDirty && ! labelEditor.hasKeyboardFocus(true))
+            setEditorTextSilently(labelEditor, definition.label);
+
+        if (! textEditorsDirty && ! codeNameEditor.hasKeyboardFocus(true))
+            setEditorTextSilently(codeNameEditor, definition.codeName);
 
         labelLabel.setText(definition.label, juce::dontSendNotification);
-        codeNameLabel.setText("controls." + definition.codeName, juce::dontSendNotification);
-        typeLabel.setText("Type: " + userDspControllerTypeToDisplayName(definition.type), juce::dontSendNotification);
-        midiLabel.setText(definition.midiBindingHint.isNotEmpty() ? ("MIDI: " + definition.midiBindingHint)
-                                                                  : "MIDI: not assigned yet",
-                          juce::dontSendNotification);
         moveLeftButton.setEnabled(index > 0);
         moveRightButton.setEnabled(index + 1 < totalCount);
-        editButton.setVisible(isEditMode);
-        moveLeftButton.setVisible(isEditMode);
-        moveRightButton.setVisible(isEditMode);
-        deleteButton.setVisible(isEditMode);
-        codeNameLabel.setVisible(isEditMode);
-        typeLabel.setVisible(isEditMode);
-        midiLabel.setVisible(isEditMode);
-
-        runtimeLabel.setText(runtimeLinked ? "Linked to DSP" : (layoutStale ? "Compile to relink" : "Preview only"),
-                             juce::dontSendNotification);
-        runtimeLabel.setColour(juce::Label::textColourId,
-                               runtimeLinked ? ide::success : (layoutStale ? ide::warning : ide::textMuted));
 
         suppressValueCallbacks = true;
-
-        knobSlider.setVisible(definition.type == UserDspControllerType::knob);
-        momentaryButton.setVisible(definition.type == UserDspControllerType::button);
-        toggleButton.setVisible(definition.type == UserDspControllerType::toggle);
-
-        knobSlider.setEnabled(! isEditMode);
-        momentaryButton.setEnabled(! isEditMode);
-        toggleButton.setEnabled(! isEditMode);
 
         if (definition.type == UserDspControllerType::knob && ! knobSlider.isValueEditorActive())
             knobSlider.setValue(displayValue, juce::dontSendNotification);
@@ -437,6 +545,10 @@ public:
             toggleButton.setLatchedState(displayValue >= 0.5f);
 
         suppressValueCallbacks = false;
+
+        updateVisibleControls();
+        updateInlineTexts();
+        resized();
         repaint();
     }
 
@@ -457,34 +569,347 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced(9);
+
+        if (displayMode == ControlsDisplayMode::edit)
+        {
+            auto headerRow = area.removeFromTop(24);
+            auto actions = headerRow.removeFromRight(82);
+            labelEditor.setBounds(headerRow);
+            moveLeftButton.setBounds(actions.removeFromLeft(22).reduced(1, 0));
+            actions.removeFromLeft(4);
+            moveRightButton.setBounds(actions.removeFromLeft(22).reduced(1, 0));
+            actions.removeFromLeft(4);
+            deleteButton.setBounds(actions.reduced(1, 0));
+
+            area.removeFromTop(6);
+            auto codeRow = area.removeFromTop(22);
+            codePrefixLabel.setBounds(codeRow.removeFromLeft(50));
+            codeNameEditor.setBounds(codeRow);
+
+            area.removeFromTop(6);
+            typeButton.setBounds(area.removeFromTop(24));
+            area.removeFromTop(4);
+            midiButton.setBounds(area.removeFromTop(24));
+            area.removeFromTop(6);
+
+            auto midiActions = area.removeFromTop(24);
+            learnButton.setBounds(midiActions.removeFromLeft((midiActions.getWidth() - 6) / 2));
+            midiActions.removeFromLeft(6);
+            clearButton.setBounds(midiActions);
+
+            area.removeFromTop(8);
+            valuePreviewLabel.setBounds(area.removeFromTop(24));
+            area.removeFromTop(6);
+            runtimeLabel.setBounds(area.removeFromTop(18));
+
+            labelLabel.setBounds({});
+            knobSlider.setBounds({});
+            momentaryButton.setBounds({});
+            toggleButton.setBounds({});
+            return;
+        }
+
         auto headerRow = area.removeFromTop(24);
-        labelLabel.setBounds(headerRow.removeFromLeft(headerRow.getWidth() - 96));
-
-        auto actions = headerRow.removeFromRight(96);
-        editButton.setBounds(actions.removeFromLeft(24).reduced(1, 0));
-        moveLeftButton.setBounds(actions.removeFromLeft(22).reduced(1, 0));
-        moveRightButton.setBounds(actions.removeFromLeft(22).reduced(1, 0));
-        deleteButton.setBounds(actions.reduced(1, 0));
+        labelLabel.setBounds(headerRow);
 
         area.removeFromTop(2);
-        codeNameLabel.setBounds(area.removeFromTop(18));
-        area.removeFromTop(2);
-        typeLabel.setBounds(area.removeFromTop(18));
-        area.removeFromTop(2);
-        midiLabel.setBounds(area.removeFromTop(18));
-        area.removeFromTop(4);
+        auto runtimeArea = area.removeFromBottom(18);
+        auto widgetArea = area.reduced(2, 0);
 
-        auto widgetArea = area.removeFromTop(110);
         knobSlider.setBounds(widgetArea);
-        momentaryButton.setBounds(widgetArea.withSizeKeepingCentre(widgetArea.getWidth(), 40).translated(0, 8));
-        toggleButton.setBounds(widgetArea.withSizeKeepingCentre(widgetArea.getWidth(), 40).translated(0, 8));
+        momentaryButton.setBounds(widgetArea.withSizeKeepingCentre(widgetArea.getWidth(), 44).translated(0, 10));
+        toggleButton.setBounds(widgetArea.withSizeKeepingCentre(widgetArea.getWidth(), 44).translated(0, 10));
+        runtimeLabel.setBounds(runtimeArea);
 
-        area.removeFromTop(2);
-        runtimeLabel.setBounds(area.removeFromTop(18));
+        labelEditor.setBounds({});
+        codePrefixLabel.setBounds({});
+        codeNameEditor.setBounds({});
+        typeButton.setBounds({});
+        midiButton.setBounds({});
+        learnButton.setBounds({});
+        clearButton.setBounds({});
+        moveLeftButton.setBounds({});
+        moveRightButton.setBounds({});
+        deleteButton.setBounds({});
+        valuePreviewLabel.setBounds({});
     }
 
 private:
-    std::function<void(int)> editRequested;
+    void timerCallback() override
+    {
+        stopTimer();
+        commitPendingTextEdits();
+    }
+
+    void scheduleTextCommit()
+    {
+        if (suppressEditorCallbacks)
+            return;
+
+        textEditorsDirty = true;
+        pendingTextCommit = true;
+        localStatusOverride.clear();
+        localStatusIsError = false;
+        startTimer(textCommitDelayMs);
+        updateInlineTexts();
+    }
+
+    void commitTextEditorsNow()
+    {
+        if (! textEditorsDirty)
+            return;
+
+        stopTimer();
+        commitPendingTextEdits();
+    }
+
+    void commitPendingTextEdits()
+    {
+        pendingTextCommit = false;
+        auto updatedDefinition = definition;
+
+        const auto labelText = labelEditor.getText().trim();
+        const auto rawCodeName = codeNameEditor.getText();
+        auto sanitisedCodeName = userdsp::sanitiseControllerCodeName(rawCodeName);
+
+        if (labelText.isEmpty())
+        {
+            localStatusOverride = "Controller name is required.";
+            localStatusIsError = true;
+            updateInlineTexts();
+            return;
+        }
+
+        if (sanitisedCodeName.isEmpty() && codeNameEditor.hasKeyboardFocus(true))
+        {
+            localStatusOverride = "DSP name is required.";
+            localStatusIsError = true;
+            updateInlineTexts();
+            return;
+        }
+
+        if (sanitisedCodeName.isEmpty())
+            sanitisedCodeName = userdsp::sanitiseControllerCodeName(labelText);
+
+        updatedDefinition.label = labelText;
+        updatedDefinition.codeName = sanitisedCodeName;
+        applyDefinitionChange(updatedDefinition);
+    }
+
+    void revertTextEditorsToDefinition()
+    {
+        stopTimer();
+        pendingTextCommit = false;
+        textEditorsDirty = false;
+        localStatusOverride.clear();
+        localStatusIsError = false;
+        setEditorTextSilently(labelEditor, definition.label);
+        setEditorTextSilently(codeNameEditor, definition.codeName);
+        updateInlineTexts();
+    }
+
+    void setEditorTextSilently(juce::TextEditor& editor, const juce::String& text)
+    {
+        const juce::ScopedValueSetter<bool> scopedSetter(suppressEditorCallbacks, true);
+        editor.setText(text, false);
+    }
+
+    void updateVisibleControls()
+    {
+        const auto isEditMode = displayMode == ControlsDisplayMode::edit;
+
+        labelLabel.setVisible(! isEditMode);
+        labelEditor.setVisible(isEditMode);
+        codePrefixLabel.setVisible(isEditMode);
+        codeNameEditor.setVisible(isEditMode);
+        typeButton.setVisible(isEditMode);
+        midiButton.setVisible(isEditMode);
+        learnButton.setVisible(isEditMode);
+        clearButton.setVisible(isEditMode);
+        moveLeftButton.setVisible(isEditMode);
+        moveRightButton.setVisible(isEditMode);
+        deleteButton.setVisible(isEditMode);
+        valuePreviewLabel.setVisible(isEditMode);
+
+        knobSlider.setVisible(! isEditMode && definition.type == UserDspControllerType::knob);
+        momentaryButton.setVisible(! isEditMode && definition.type == UserDspControllerType::button);
+        toggleButton.setVisible(! isEditMode && definition.type == UserDspControllerType::toggle);
+
+        knobSlider.setEnabled(! isEditMode);
+        momentaryButton.setEnabled(! isEditMode);
+        toggleButton.setEnabled(! isEditMode);
+    }
+
+    void updateInlineTexts()
+    {
+        typeButton.setButtonText("Type: " + userDspControllerTypeToDisplayName(definition.type));
+
+        const auto midiSummary = buildDisplayedMidiSummary(definition);
+        midiButton.setButtonText(midiSummary.isNotEmpty() ? ("MIDI: " + midiSummary)
+                                                          : "MIDI: Not assigned");
+        valuePreviewLabel.setText(buildEditValuePreview(definition.type, currentDisplayValue), juce::dontSendNotification);
+        learnButton.setButtonText(learnArmed ? "Cancel" : "Learn");
+        learnButton.setEnabled(midiInputAvailable || learnArmed);
+        clearButton.setEnabled(midi::isBindingActive(definition.midiBinding) || definition.midiBindingHint.isNotEmpty());
+
+        juce::String statusText;
+        juce::Colour statusColour = ide::textMuted;
+
+        if (localStatusOverride.isNotEmpty())
+        {
+            statusText = localStatusOverride;
+            statusColour = localStatusIsError ? ide::warning : ide::textSecondary;
+        }
+        else if (displayMode == ControlsDisplayMode::edit && learnArmed)
+        {
+            statusText = midiInputAvailable ? "Waiting for MIDI..." : "No MIDI input";
+            statusColour = midiInputAvailable ? ide::warning : ide::textMuted;
+        }
+        else
+        {
+            statusText = runtimeLinked ? "Linked to DSP" : (layoutStale ? "Compile to relink" : "Preview only");
+            statusColour = runtimeLinked ? ide::success : (layoutStale ? ide::warning : ide::textMuted);
+        }
+
+        runtimeLabel.setText(statusText, juce::dontSendNotification);
+        runtimeLabel.setColour(juce::Label::textColourId, statusColour);
+    }
+
+    void showTypeMenu()
+    {
+        juce::PopupMenu menu;
+        menu.addItem(typeMenuKnobId, "Knob", true, definition.type == UserDspControllerType::knob);
+        menu.addItem(typeMenuButtonId, "Button", true, definition.type == UserDspControllerType::button);
+        menu.addItem(typeMenuToggleId, "Toggle", true, definition.type == UserDspControllerType::toggle);
+
+        auto safeThis = juce::Component::SafePointer<ControllerTileComponent>(this);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&typeButton),
+                           [safeThis] (int result)
+                           {
+                               if (safeThis == nullptr || result == 0)
+                                   return;
+
+                               auto updatedDefinition = safeThis->definition;
+                               updatedDefinition.type = menuIdToControllerType(result);
+                               safeThis->applyDefinitionChange(updatedDefinition);
+                           });
+    }
+
+    void showMidiMenu()
+    {
+        juce::PopupMenu menu;
+        juce::PopupMenu sourceMenu;
+
+        const auto currentBinding = midi::isBindingActive(definition.midiBinding)
+                                      ? midi::sanitiseMidiBinding(definition.midiBinding)
+                                      : MidiBinding {};
+
+        sourceMenu.addItem(midiSourceBaseId + 1, "Not assigned", true, ! midi::isBindingActive(currentBinding));
+        sourceMenu.addItem(midiSourceBaseId + 2, "CC", true, currentBinding.source == MidiBindingSource::cc);
+        sourceMenu.addItem(midiSourceBaseId + 3, "Note Gate", true, currentBinding.source == MidiBindingSource::noteGate);
+        sourceMenu.addItem(midiSourceBaseId + 4, "Note Velocity", true, currentBinding.source == MidiBindingSource::noteVelocity);
+        sourceMenu.addItem(midiSourceBaseId + 5, "Note Number", true, currentBinding.source == MidiBindingSource::noteNumber);
+        sourceMenu.addItem(midiSourceBaseId + 6, "Pitch Wheel", true, currentBinding.source == MidiBindingSource::pitchWheel);
+        menu.addSubMenu("Source", sourceMenu);
+
+        if (midi::isBindingActive(currentBinding))
+        {
+            juce::PopupMenu channelMenu;
+
+            for (int channel = 1; channel <= 16; ++channel)
+                channelMenu.addItem(midiChannelBaseId + channel, "Ch " + juce::String(channel), true, currentBinding.channel == channel);
+
+            menu.addSubMenu("Channel", channelMenu);
+
+            if (currentBinding.source != MidiBindingSource::pitchWheel)
+            {
+                juce::PopupMenu dataMenu;
+                populateMidiDataMenu(dataMenu, currentBinding.source, currentBinding.data1);
+                menu.addSubMenu(currentBinding.source == MidiBindingSource::cc ? "CC Number" : "Note", dataMenu);
+            }
+
+            menu.addSeparator();
+            menu.addItem(midiClearId, "Clear MIDI");
+        }
+
+        auto safeThis = juce::Component::SafePointer<ControllerTileComponent>(this);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&midiButton),
+                           [safeThis, currentBinding] (int result)
+                           {
+                               if (safeThis == nullptr || result == 0)
+                                   return;
+
+                               auto updatedDefinition = safeThis->definition;
+
+                               if (result >= midiSourceBaseId + 1 && result <= midiSourceBaseId + 6)
+                               {
+                                   updatedDefinition.midiBinding = sourceMenuIdToBinding(result, currentBinding);
+                                   updatedDefinition.midiBindingHint.clear();
+                                   safeThis->applyDefinitionChange(updatedDefinition);
+                                   return;
+                               }
+
+                               if (result >= midiChannelBaseId + 1 && result <= midiChannelBaseId + 16)
+                               {
+                                   updatedDefinition.midiBinding = currentBinding;
+                                   updatedDefinition.midiBinding.channel = result - midiChannelBaseId;
+                                   safeThis->applyDefinitionChange(updatedDefinition);
+                                   return;
+                               }
+
+                               if (result >= midiDataBaseId + 1 && result <= midiDataBaseId + 128)
+                               {
+                                   updatedDefinition.midiBinding = currentBinding;
+                                   updatedDefinition.midiBinding.data1 = result - midiDataBaseId - 1;
+                                   safeThis->applyDefinitionChange(updatedDefinition);
+                                   return;
+                               }
+
+                               if (result == midiClearId)
+                               {
+                                   updatedDefinition.midiBinding = {};
+                                   updatedDefinition.midiBindingHint.clear();
+                                   safeThis->applyDefinitionChange(updatedDefinition);
+                               }
+                           });
+    }
+
+    void applyDefinitionChange(UserDspControllerDefinition updatedDefinition)
+    {
+        updatedDefinition.label = updatedDefinition.label.trim();
+        updatedDefinition.codeName = userdsp::sanitiseControllerCodeName(updatedDefinition.codeName);
+        updatedDefinition.midiBinding = midi::sanitiseMidiBinding(updatedDefinition.midiBinding);
+        updatedDefinition.midiBindingHint = midi::isBindingActive(updatedDefinition.midiBinding)
+                                              ? midi::buildMidiBindingSummary(updatedDefinition.midiBinding)
+                                              : juce::String {};
+
+        if (definitionChanged == nullptr)
+            return;
+
+        const auto result = definitionChanged(controllerIndex, updatedDefinition);
+
+        if (result.wasOk())
+        {
+            definition = updatedDefinition;
+            textEditorsDirty = false;
+            pendingTextCommit = false;
+            localStatusOverride.clear();
+            localStatusIsError = false;
+            stopTimer();
+        }
+        else
+        {
+            localStatusOverride = result.getErrorMessage();
+            localStatusIsError = true;
+        }
+
+        updateInlineTexts();
+        repaint();
+    }
+
+    std::function<juce::Result(int, const UserDspControllerDefinition&)> definitionChanged;
+    std::function<void(int, MidiBindingSource)> midiLearnRequested;
+    std::function<void(int)> midiLearnCancelled;
     std::function<void(int, int)> moveRequested;
     std::function<void(int)> deleteRequested;
     std::function<void(int, float)> valueChanged;
@@ -493,15 +918,27 @@ private:
     ControlsDisplayMode displayMode = ControlsDisplayMode::play;
     bool runtimeLinked = false;
     bool layoutStale = false;
+    bool learnArmed = false;
+    bool midiInputAvailable = false;
     bool suppressValueCallbacks = false;
+    bool suppressEditorCallbacks = false;
+    bool textEditorsDirty = false;
+    bool pendingTextCommit = false;
+    bool localStatusIsError = false;
+    float currentDisplayValue = 0.0f;
+    juce::String localStatusOverride;
     UserDspControllerDefinition definition;
 
     juce::Label labelLabel;
-    juce::Label codeNameLabel;
-    juce::Label typeLabel;
-    juce::Label midiLabel;
+    juce::Label codePrefixLabel;
+    juce::Label valuePreviewLabel;
     juce::Label runtimeLabel;
-    ActionTextButton editButton;
+    ScrollPassthroughTextEditor labelEditor;
+    ScrollPassthroughTextEditor codeNameEditor;
+    ActionTextButton typeButton;
+    ActionTextButton midiButton;
+    ActionTextButton learnButton;
+    ActionTextButton clearButton;
     ActionTextButton moveLeftButton;
     ActionTextButton moveRightButton;
     ActionTextButton deleteButton;
@@ -520,8 +957,8 @@ RealtimeControlsComponent::RealtimeControlsComponent(AudioEngine& audioEngineToC
     configureBodyLabel(hintLabel, {}, juce::Justification::topLeft, 12.5f, false);
     configureBodyLabel(modeLabel, "Mode", juce::Justification::centredLeft, 13.0f, true);
     configureBodyLabel(midiModeHintLabel,
-                       "Edit mode stores labels, code names, and future MIDI mapping hints. "
-                       "Play mode is for using controllers only.",
+                       "Edit mode changes controller metadata inline on each card. "
+                       "Play mode is for performance only.",
                        juce::Justification::topLeft,
                        12.0f,
                        false);
@@ -627,11 +1064,18 @@ void RealtimeControlsComponent::resized()
 
 void RealtimeControlsComponent::timerCallback()
 {
+    handleMidiLearnCapture();
     syncToProjectAndRuntime();
 }
 
 void RealtimeControlsComponent::setMode(Mode nextMode)
 {
+    if (mode != nextMode)
+    {
+        audioEngine.cancelMidiLearn();
+        midiLearnControllerIndex = -1;
+    }
+
     mode = nextMode;
     const auto isEditMode = mode == Mode::edit;
 
@@ -643,8 +1087,8 @@ void RealtimeControlsComponent::setMode(Mode nextMode)
     midiModeHintLabel.setVisible(isEditMode);
 
     hintLabel.setText(isEditMode
-                          ? "Edit mode changes controller metadata and layout. Use the ... button on a tile to edit details."
-                          : "Play mode is for performance. Controller widgets only send values to DSP and do not open editors.",
+                          ? "Edit mode changes each controller inline inside its card. Changes save automatically."
+                          : "Play mode is for performance. Controller widgets only send values to DSP.",
                       juce::dontSendNotification);
 
     syncToProjectAndRuntime();
@@ -654,32 +1098,12 @@ void RealtimeControlsComponent::setMode(Mode nextMode)
 
 void RealtimeControlsComponent::addController(UserDspControllerType type)
 {
+    audioEngine.cancelMidiLearn();
+    midiLearnControllerIndex = -1;
+
     if (const auto result = projectManager.addController(type); result.failed())
     {
         showErrorMessage("Add Controller Failed", result.getErrorMessage());
-        return;
-    }
-
-    const auto newIndex = static_cast<int>(projectManager.getControllerDefinitions().size()) - 1;
-    editController(newIndex);
-    syncToProjectAndRuntime();
-}
-
-void RealtimeControlsComponent::editController(int index)
-{
-    const auto& definitions = projectManager.getControllerDefinitions();
-
-    if (! juce::isPositiveAndBelow(index, static_cast<int>(definitions.size())))
-        return;
-
-    auto updatedDefinition = definitions[static_cast<std::size_t>(index)];
-
-    if (! showControllerEditorDialog(updatedDefinition, &getLookAndFeel()))
-        return;
-
-    if (const auto result = projectManager.updateController(index, updatedDefinition); result.failed())
-    {
-        showErrorMessage("Edit Controller Failed", result.getErrorMessage());
         return;
     }
 
@@ -696,6 +1120,9 @@ void RealtimeControlsComponent::deleteController(int index)
     if (! showDeleteDialog(definitions[static_cast<std::size_t>(index)].label, &getLookAndFeel()))
         return;
 
+    audioEngine.cancelMidiLearn();
+    midiLearnControllerIndex = -1;
+
     if (const auto result = projectManager.removeController(index); result.failed())
     {
         showErrorMessage("Delete Controller Failed", result.getErrorMessage());
@@ -707,6 +1134,9 @@ void RealtimeControlsComponent::deleteController(int index)
 
 void RealtimeControlsComponent::moveController(int sourceIndex, int destinationIndex)
 {
+    audioEngine.cancelMidiLearn();
+    midiLearnControllerIndex = -1;
+
     if (const auto result = projectManager.moveController(sourceIndex, destinationIndex); result.failed())
     {
         showErrorMessage("Move Controller Failed", result.getErrorMessage());
@@ -733,6 +1163,65 @@ void RealtimeControlsComponent::applyControllerValue(int index, float value)
         previewValuesNeedPush = true;
 }
 
+juce::Result RealtimeControlsComponent::updateControllerDefinition(int index,
+                                                                   const UserDspControllerDefinition& definition,
+                                                                   bool showFailureDialog)
+{
+    const auto result = projectManager.updateController(index, definition);
+
+    if (result.failed())
+    {
+        if (showFailureDialog)
+            showErrorMessage("Update Controller Failed", result.getErrorMessage());
+
+        return result;
+    }
+
+    syncToProjectAndRuntime();
+    return result;
+}
+
+void RealtimeControlsComponent::armMidiLearnForController(int index, MidiBindingSource preferredSource)
+{
+    if (! juce::isPositiveAndBelow(index, static_cast<int>(projectManager.getControllerDefinitions().size())))
+        return;
+
+    midiLearnControllerIndex = index;
+    audioEngine.armMidiLearn(index, preferredSource);
+    syncToProjectAndRuntime();
+}
+
+void RealtimeControlsComponent::cancelMidiLearnForController(int index)
+{
+    if (midiLearnControllerIndex != index)
+        return;
+
+    audioEngine.cancelMidiLearn();
+    midiLearnControllerIndex = -1;
+    syncToProjectAndRuntime();
+}
+
+void RealtimeControlsComponent::handleMidiLearnCapture()
+{
+    MidiLearnCapture capture;
+
+    if (! audioEngine.consumeMidiLearnCapture(capture))
+        return;
+
+    midiLearnControllerIndex = -1;
+    const auto& definitions = projectManager.getControllerDefinitions();
+
+    if (! juce::isPositiveAndBelow(capture.controlIndex, static_cast<int>(definitions.size())))
+        return;
+
+    auto updatedDefinition = definitions[static_cast<std::size_t>(capture.controlIndex)];
+    updatedDefinition.midiBinding = capture.binding;
+    updatedDefinition.midiBindingHint = midi::buildMidiBindingSummary(capture.binding);
+
+    if (const auto result = updateControllerDefinition(capture.controlIndex, updatedDefinition, false); result.failed())
+        showErrorMessage("MIDI Learn Failed", result.getErrorMessage());
+}
+
 void RealtimeControlsComponent::syncToProjectAndRuntime()
 {
     const auto& definitionsRef = projectManager.getControllerDefinitions();
@@ -743,9 +1232,15 @@ void RealtimeControlsComponent::syncToProjectAndRuntime()
     {
         previewValues = remapPreviewValues(lastDefinitions, previewValues, definitions);
         lastDefinitions = definitions;
-        rebuildTiles();
+        lastMidiPreviewGenerations.assign(lastDefinitions.size(), 0);
         previewValuesNeedPush = ! previewValues.empty();
+
+        if (tiles.size() != lastDefinitions.size())
+            rebuildTiles();
     }
+
+    if (tiles.size() != lastDefinitions.size())
+        rebuildTiles();
 
     layoutMatchesRuntime = definitionsMatchSnapshot(lastDefinitions, snapshot);
 
@@ -783,17 +1278,35 @@ void RealtimeControlsComponent::syncToProjectAndRuntime()
     else
     {
         statusText = isEditMode
-                         ? "Edit mode is active. Runtime stays linked, but interaction is intentionally disabled while you change metadata."
+                         ? "Edit mode is active. Metadata edits stay inline and save automatically."
                          : "Loaded module: " + snapshot.processorName + ". Runtime controls are live.";
     }
 
     statusLabel.setText(statusText, juce::dontSendNotification);
+
+    const auto audioSnapshot = audioEngine.getSnapshot();
+    const auto hasMidiInput = ! audioSnapshot.availableMidiInputDevices.isEmpty();
 
     for (int index = 0; index < static_cast<int>(tiles.size()); ++index)
     {
         auto displayValue = index < static_cast<int>(previewValues.size())
                                 ? previewValues[static_cast<std::size_t>(index)]
                                 : 0.0f;
+
+        const auto previewGeneration = audioEngine.getPreviewControlGeneration(index);
+
+        if (index < static_cast<int>(lastMidiPreviewGenerations.size())
+            && previewGeneration != lastMidiPreviewGenerations[static_cast<std::size_t>(index)])
+        {
+            lastMidiPreviewGenerations[static_cast<std::size_t>(index)] = previewGeneration;
+
+            if (! layoutMatchesRuntime)
+            {
+                displayValue = audioEngine.getPreviewControlValue(index);
+                previewValues[static_cast<std::size_t>(index)] = displayValue;
+                previewValuesNeedPush = true;
+            }
+        }
 
         if (layoutMatchesRuntime && index < snapshot.controlCount)
         {
@@ -807,7 +1320,9 @@ void RealtimeControlsComponent::syncToProjectAndRuntime()
                                                                 mode == Mode::edit ? ControlsDisplayMode::edit : ControlsDisplayMode::play,
                                                                 layoutMatchesRuntime,
                                                                 displayValue,
-                                                                ! layoutMatchesRuntime && snapshot.hasActiveModule);
+                                                                ! layoutMatchesRuntime && snapshot.hasActiveModule,
+                                                                midiLearnControllerIndex == index,
+                                                                hasMidiInput);
     }
 
     updateTileLayout();
@@ -825,7 +1340,18 @@ void RealtimeControlsComponent::rebuildTiles()
     for (std::size_t index = 0; index < lastDefinitions.size(); ++index)
     {
         auto tile = std::make_unique<ControllerTileComponent>(
-            [this] (int controllerIndex) { editController(controllerIndex); },
+            [this] (int controllerIndex, const UserDspControllerDefinition& definition)
+            {
+                return updateControllerDefinition(controllerIndex, definition, false);
+            },
+            [this] (int controllerIndex, MidiBindingSource preferredSource)
+            {
+                armMidiLearnForController(controllerIndex, preferredSource);
+            },
+            [this] (int controllerIndex)
+            {
+                cancelMidiLearnForController(controllerIndex);
+            },
             [this] (int sourceIndex, int destinationIndex) { moveController(sourceIndex, destinationIndex); },
             [this] (int controllerIndex) { deleteController(controllerIndex); },
             [this] (int controllerIndex, float value) { applyControllerValue(controllerIndex, value); });
@@ -868,7 +1394,7 @@ void RealtimeControlsComponent::updateTileLayout()
 void RealtimeControlsComponent::showErrorMessage(const juce::String& title, const juce::String& message)
 {
     juce::AlertWindow window(title, message, juce::MessageBoxIconType::WarningIcon);
-    configureAlertWindowLookAndFeel(window, &getLookAndFeel());
+    window.setLookAndFeel(&getLookAndFeel());
     window.addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
     window.runModalLoop();
 }

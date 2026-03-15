@@ -34,10 +34,13 @@ private:
 
     void setMode(Mode nextMode);
     void addController(UserDspControllerType type);
-    void editController(int index);
     void deleteController(int index);
     void moveController(int sourceIndex, int destinationIndex);
     void applyControllerValue(int index, float value);
+    juce::Result updateControllerDefinition(int index, const UserDspControllerDefinition& definition, bool showFailureDialog);
+    void armMidiLearnForController(int index, MidiBindingSource preferredSource);
+    void cancelMidiLearnForController(int index);
+    void handleMidiLearnCapture();
     void syncToProjectAndRuntime();
     void rebuildTiles();
     void updateTileLayout();
@@ -61,7 +64,9 @@ private:
     std::vector<std::unique_ptr<ControllerTileComponent>> tiles;
     std::vector<UserDspControllerDefinition> lastDefinitions;
     std::vector<float> previewValues;
+    std::vector<std::uint32_t> lastMidiPreviewGenerations;
     bool previewValuesNeedPush = false;
     bool layoutMatchesRuntime = false;
     Mode mode = Mode::play;
+    int midiLearnControllerIndex = -1;
 };

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 
+#include "midi/MidiBinding.h"
 #include "UserDspApi.h"
 
 enum class UserDspControllerType
@@ -16,6 +17,7 @@ struct UserDspControllerDefinition
     UserDspControllerType type = UserDspControllerType::knob;
     juce::String label;
     juce::String codeName;
+    MidiBinding midiBinding;
     juce::String midiBindingHint;
 
     bool operator==(const UserDspControllerDefinition& other) const noexcept
@@ -23,6 +25,7 @@ struct UserDspControllerDefinition
         return type == other.type
             && label == other.label
             && codeName == other.codeName
+            && midiBinding == other.midiBinding
             && midiBindingHint == other.midiBindingHint;
     }
 

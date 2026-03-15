@@ -45,6 +45,7 @@ public:
                  int numOutputChannels,
                  int numSamples);
 
+    void setMidiInputState(const DspEduMidiState& midiState) noexcept;
     void setControlValue(int index, float value) noexcept;
     float getControlValue(int index) const noexcept;
 
@@ -63,6 +64,7 @@ private:
 
     mutable juce::CriticalSection snapshotLock;
     Snapshot snapshot;
+    DspEduMidiState currentMidiState;
 
     std::array<std::atomic<float>, DSP_EDU_USER_DSP_MAX_CONTROLS> controlValues;
     std::atomic<double> currentSampleRate { 44100.0 };

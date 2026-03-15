@@ -1,13 +1,15 @@
 {
   "version": 4,
-  "projectName": "Simple Synth Voice",
-  "processorClass": "SimpleSynthVoiceProcessor",
-  "activeFilePath": "src/SimpleSynthVoiceProcessor.h",
+  "projectName": "Poly Synth ADSR",
+  "processorClass": "PolySynthAdsrProcessor",
+  "activeFilePath": "src/PolySynthAdsrProcessor.h",
   "controllers": [
-    { "type": "knob", "label": "Tune", "codeName": "tuneKnob" },
+    { "type": "knob", "label": "Attack", "codeName": "attackKnob" },
+    { "type": "knob", "label": "Decay", "codeName": "decayKnob" },
+    { "type": "knob", "label": "Sustain", "codeName": "sustainKnob" },
+    { "type": "knob", "label": "Release", "codeName": "releaseKnob" },
     { "type": "knob", "label": "Filter Cutoff", "codeName": "cutoffKnob" },
     { "type": "knob", "label": "Resonance", "codeName": "resonanceKnob" },
-    { "type": "knob", "label": "Release", "codeName": "releaseKnob" },
     { "type": "knob", "label": "Env To Cutoff", "codeName": "envAmountKnob" },
     { "type": "knob", "label": "Level", "codeName": "levelKnob" }
   ],
@@ -55,36 +57,13 @@
         "name": "src",
         "type": "folder",
         "children": [
-          {
-            "name": "main.cpp",
-            "type": "file",
-            "children": []
-          },
-          {
-            "name": "MidiNoteUtils.h",
-            "type": "file",
-            "children": []
-          },
-          {
-            "name": "SimpleSawOscillator.h",
-            "type": "file",
-            "children": []
-          },
-          {
-            "name": "SimpleGateEnvelope.h",
-            "type": "file",
-            "children": []
-          },
-          {
-            "name": "SimpleLadderFilter.h",
-            "type": "file",
-            "children": []
-          },
-          {
-            "name": "SimpleSynthVoiceProcessor.h",
-            "type": "file",
-            "children": []
-          }
+          { "name": "main.cpp", "type": "file", "children": [] },
+          { "name": "MidiNoteUtils.h", "type": "file", "children": [] },
+          { "name": "SimpleSawOscillator.h", "type": "file", "children": [] },
+          { "name": "AdsrEnvelope.h", "type": "file", "children": [] },
+          { "name": "StateVariableLowPass.h", "type": "file", "children": [] },
+          { "name": "PolySynthVoice.h", "type": "file", "children": [] },
+          { "name": "PolySynthAdsrProcessor.h", "type": "file", "children": [] }
         ]
       }
     ]
