@@ -291,6 +291,33 @@ Debug build:
 cmd /c scripts\build_windows.cmd build Debug
 ```
 
+### Windows Portable Package
+
+```powershell
+cmd /c scripts\package_windows.cmd
+```
+
+This helper:
+
+- builds the Windows app in `Release`
+- rebuilds the bundled example archives from `example_projects/`
+- creates a portable bundle in `dist/DSP Education Stand Windows x64/`
+- creates `dist/DSP Education Stand Windows x64.zip`
+
+The package keeps the app icon embedded in the `.exe` and includes the files the app needs for in-app user DSP compilation on Windows:
+
+- `scripts/build_user_dsp.cmd`
+- `scripts/build_user_dsp.ps1`
+- `user_dsp_sdk/UserDspApi.h`
+- `example_project_archives/`
+- `manual_en.md`
+- `manual_ru.md`
+
+Important:
+
+- the standalone app package is portable
+- compiling user DSP projects inside the app still requires Visual Studio Build Tools with C++ support on the target Windows machine
+
 ### macOS App Build
 
 ```bash

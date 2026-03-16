@@ -22,7 +22,7 @@ struct ValidatedProjectLayout
 UserDspBuildInfo getUserDspBuildInfo()
 {
 #if JUCE_WINDOWS
-    return { ".dll", ".pdb", "scripts/build_user_dsp.cmd", { "cmd", "/c" } };
+    return { ".dll", ".pdb", "scripts/build_user_dsp.ps1", { "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File" } };
 #elif JUCE_MAC
     return { ".dylib", ".dSYM", "scripts/build_user_dsp.sh", { "/bin/sh" } };
 #else

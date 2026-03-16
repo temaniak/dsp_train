@@ -15,7 +15,7 @@ public:
                int minHeight);
     ~ToolWindow() override;
 
-    void present(juce::Component* parentComponent);
+    void present(juce::Component* anchorComponent);
 
     juce::Component* getToolContent() const noexcept;
 

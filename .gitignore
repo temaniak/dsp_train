@@ -1,6 +1,7 @@
 build/
 build-tests/
 build-*/
+dist/
 .vscode/
 *.user
 *.VC.db

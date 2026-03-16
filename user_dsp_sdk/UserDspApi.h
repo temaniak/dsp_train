@@ -334,42 +334,43 @@ void process(ProcessorType& processor,
     {
         copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
         processor.processAudio(outputs, numOutputChannels, numSamples);
-        return;
-    }
-
-    const auto* input = inputs != nullptr && numInputChannels > 0 ? inputs[0] : nullptr;
-    auto* output = outputs != nullptr && numOutputChannels > 0 ? outputs[0] : nullptr;
-
-    if (output == nullptr)
-        return;
-
-    if constexpr (requires { processor.process(input, output, numSamples); })
-    {
-        processor.process(input, output, numSamples);
-    }
-    else if constexpr (requires { processor.processAudio(input, output, numSamples); })
-    {
-        processor.processAudio(input, output, numSamples);
-    }
-    else if constexpr (requires { processor.process(output, numSamples); })
-    {
-        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
-        processor.process(output, numSamples);
-    }
-    else if constexpr (requires { processor.processAudio(output, numSamples); })
-    {
-        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
-        processor.processAudio(output, numSamples);
     }
     else
     {
-        copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
-    }
+        const auto* input = inputs != nullptr && numInputChannels > 0 ? inputs[0] : nullptr;
+        auto* output = outputs != nullptr && numOutputChannels > 0 ? outputs[0] : nullptr;
 
-    for (int channel = 1; channel < numOutputChannels; ++channel)
-    {
-        if (outputs[channel] != nullptr)
-            std::copy_n(output, static_cast<std::size_t>(numSamples), outputs[channel]);
+        if (output == nullptr)
+            return;
+
+        if constexpr (requires { processor.process(input, output, numSamples); })
+        {
+            processor.process(input, output, numSamples);
+        }
+        else if constexpr (requires { processor.processAudio(input, output, numSamples); })
+        {
+            processor.processAudio(input, output, numSamples);
+        }
+        else if constexpr (requires { processor.process(output, numSamples); })
+        {
+            copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+            processor.process(output, numSamples);
+        }
+        else if constexpr (requires { processor.processAudio(output, numSamples); })
+        {
+            copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+            processor.processAudio(output, numSamples);
+        }
+        else
+        {
+            copyInputToOutput(inputs, outputs, numInputChannels, numOutputChannels, numSamples);
+        }
+
+        for (int channel = 1; channel < numOutputChannels; ++channel)
+        {
+            if (outputs[channel] != nullptr)
+                std::copy_n(output, static_cast<std::size_t>(numSamples), outputs[channel]);
+        }
     }
 }
 

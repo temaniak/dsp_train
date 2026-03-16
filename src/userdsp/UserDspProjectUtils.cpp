@@ -591,22 +591,31 @@ juce::String buildWrapperSourceSnippet(const std::vector<UserDspControllerDefini
     wrappedSource << "}\n\n";
     wrappedSource << "void setProjectControlValue(int controlIndex, float value) noexcept\n";
     wrappedSource << "{\n";
-    wrappedSource << "    switch (controlIndex)\n";
-    wrappedSource << "    {\n";
-
-    for (int index = 0; index < static_cast<int>(definitions.size()); ++index)
+    if (definitions.empty())
     {
-        const auto& definition = definitions[static_cast<std::size_t>(index)];
-        wrappedSource << "        case " << index << ": ";
+        wrappedSource << "    static_cast<void>(controlIndex);\n";
+        wrappedSource << "    static_cast<void>(value);\n";
+    }
+    else
+    {
+        wrappedSource << "    switch (controlIndex)\n";
+        wrappedSource << "    {\n";
 
-        if (definition.type == UserDspControllerType::knob)
-            wrappedSource << "::gDspEduProjectControls." << definition.codeName << " = std::clamp(value, 0.0f, 1.0f); break;\n";
-        else
-            wrappedSource << "::gDspEduProjectControls." << definition.codeName << " = value >= 0.5f; break;\n";
+        for (int index = 0; index < static_cast<int>(definitions.size()); ++index)
+        {
+            const auto& definition = definitions[static_cast<std::size_t>(index)];
+            wrappedSource << "        case " << index << ": ";
+
+            if (definition.type == UserDspControllerType::knob)
+                wrappedSource << "::gDspEduProjectControls." << definition.codeName << " = std::clamp(value, 0.0f, 1.0f); break;\n";
+            else
+                wrappedSource << "::gDspEduProjectControls." << definition.codeName << " = value >= 0.5f; break;\n";
+        }
+
+        wrappedSource << "        default: break;\n";
+        wrappedSource << "    }\n";
     }
 
-    wrappedSource << "        default: break;\n";
-    wrappedSource << "    }\n";
     wrappedSource << "}\n";
     wrappedSource << "\n";
     wrappedSource << "void setMidiState(const DspEduMidiState& state) noexcept\n";

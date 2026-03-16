@@ -36,12 +36,12 @@ ToolWindow::~ToolWindow()
     setLookAndFeel(nullptr);
 }
 
-void ToolWindow::present(juce::Component* parentComponent)
+void ToolWindow::present(juce::Component* anchorComponent)
 {
     if (! isVisible())
     {
-        if (parentComponent != nullptr)
-            centreAroundComponent(parentComponent, getWidth(), getHeight());
+        if (anchorComponent != nullptr)
+            centreAroundComponent(anchorComponent, getWidth(), getHeight());
 
         setVisible(true);
     }
